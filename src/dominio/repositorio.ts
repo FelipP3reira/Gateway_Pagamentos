@@ -1,6 +1,6 @@
 import type { Kysely, Selectable } from 'kysely';
 
-import type { BancoDeDados, Estado, TabelaPagamentos } from '../db/esquema.ts';
+import type { BancoDeDados, Estado, Provedor, TabelaPagamentos } from '../db/esquema.ts';
 import { ErroDeAplicacao } from '../erros.ts';
 import { garantirTransicao } from './maquina-estados.ts';
 import type { NovaCobranca, Pagamento } from './tipos.ts';
@@ -81,6 +81,18 @@ export class RepositorioDePagamentos {
       .set({ referencia_externa: referencia, atualizado_em: new Date() })
       .where('id', '=', id)
       .execute();
+  }
+
+  // Acha o pagamento pela referência do provedor — o webhook chega com ela, não
+  // com o nosso id.
+  async buscarPorReferencia(provedor: Provedor, referencia: string): Promise<Pagamento | null> {
+    const linha = await this.db
+      .selectFrom('pagamentos')
+      .selectAll()
+      .where('provedor', '=', provedor)
+      .where('referencia_externa', '=', referencia)
+      .executeTakeFirst();
+    return linha ? mapear(linha) : null;
   }
 
   /**
