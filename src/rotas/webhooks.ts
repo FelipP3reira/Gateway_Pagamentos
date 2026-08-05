@@ -6,10 +6,12 @@ import type { ProcessadorDeWebhook } from '../webhooks/processador.ts';
 
 const PROVEDORES: Provedor[] = ['stripe', 'fake'];
 
-// Cada provedor manda a assinatura no seu próprio cabeçalho.
+// Cada provedor manda a assinatura no seu próprio cabeçalho. (O PIX tem rota
+// própria em /webhooks/pix; entra aqui só para o tipo ficar completo.)
 const CABECALHO_ASSINATURA: Record<Provedor, string> = {
   stripe: 'stripe-signature',
   fake: 'x-assinatura',
+  pix: 'x-assinatura',
 };
 
 function cabecalho(valor: string | string[] | undefined): string | undefined {

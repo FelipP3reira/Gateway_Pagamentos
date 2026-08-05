@@ -47,10 +47,17 @@ provider fake cobre o fluxo. A suíte não depende de rede nem de chave real.
 | POST   | `/pagamentos/:id/reconciliar` | Alinha o estado local com o do provedor.    |
 | GET    | `/pagamentos/:id`             | Consulta o pagamento.                       |
 | POST   | `/webhooks/:provedor`         | Recebe eventos (assinatura obrigatória).    |
+| POST   | `/pix/chaves`                 | Gera/registra uma chave PIX (sandbox).      |
+| POST   | `/pix/cobrancas`              | Cria a cobrança PIX: copia-e-cola + QR.     |
+| POST   | `/webhooks/pix`               | Confirma o pagamento PIX (assinado).        |
 
 O corpo de `POST /pagamentos` recebe `provedor`, `valorCentavos` (inteiro),
 `moeda`, `tokenMetodo` (o **token do provedor**, nunca o cartão) e
 `capturaAutomatica`.
+
+`POST /pix/cobrancas` (com `Idempotency-Key`) recebe `chave` e `valorCentavos` e
+devolve o **copia-e-cola** e o **QR** (SVG + PNG data URI). O pagamento nasce
+`pendente` e é liquidado quando chega o webhook de confirmação assinado.
 
 ## Decisões
 
@@ -88,6 +95,15 @@ só o token do método de pagamento gerado pelo provedor. Segredos, tokens e
 assinaturas são redigidos antes de qualquer log; o PAN não entra no sistema, e
 se cair num objeto por engano, a máscara pega.
 
+**PIX: o QR é real, a liquidação é simulada.** O BR Code ("copia e cola") é
+gerado conforme o padrão EMV/Banco Central — formatação TLV fechada por
+CRC16-CCITT —, então um app de banco leria o payload. O que é sandbox: a **chave
+PIX** é simulada (uma aleatória é só um UUID, não registrada no DICT, e por isso
+não recebe dinheiro real) e a **confirmação** vem de um webhook assinado de
+teste, não de um PSP. A cobrança PIX reaproveita a mesma máquina de estados e a
+mesma idempotência de webhook do resto do gateway (evento duplicado não liquida
+duas vezes).
+
 **Config falha na subida.** Falta de `DATABASE_URL` ou `FAKE_WEBHOOK_SECRET`
 derruba o processo no boot, não na primeira requisição.
 
@@ -108,6 +124,10 @@ verdade exigiria, além do que está aqui:
 - **Auditoria imutável** (append-only assinado) e retenção/observabilidade.
 - **Antifraude, limites, chargebacks e disputas**, reconciliação financeira
   contábil (não só de estado).
+- **PIX de verdade**: registrar a chave no **DICT** do Banco Central via um PSP
+  licenciado, integração com a API PIX (mTLS, certificados, homologação),
+  cobrança dinâmica (payload com URL do PSP) e devolução (`/pix/devolucoes`).
+  Aqui a chave é simulada e a liquidação vem de um webhook de sandbox.
 
 ## Estado
 
@@ -116,3 +136,4 @@ verdade exigiria, além do que está aqui:
 - [x] Provedores (interface + Stripe + fake) e verificação de assinatura
 - [x] Serviço de pagamento, idempotência e webhooks
 - [x] Reconciliação e README final
+- [x] PIX (sandbox): chave, cobrança com BR Code + QR e confirmação por webhook

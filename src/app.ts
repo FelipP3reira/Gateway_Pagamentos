@@ -6,8 +6,10 @@ import type { BancoDeDados } from './db/esquema.ts';
 import { ServicoDeReconciliacao } from './dominio/reconciliacao.ts';
 import { RepositorioDePagamentos } from './dominio/repositorio.ts';
 import { ServicoDePagamento } from './dominio/servico-pagamento.ts';
+import { ServicoPix } from './pix/servico-pix.ts';
 import { montarRegistro, type RegistroDeProvedores } from './provedores/registro.ts';
 import { registrarRotasPagamentos } from './rotas/pagamentos.ts';
+import { registrarRotasPix } from './rotas/pix.ts';
 import { registrarRotasWebhook } from './rotas/webhooks.ts';
 import { criarServidor } from './servidor.ts';
 import { ProcessadorDeWebhook } from './webhooks/processador.ts';
@@ -26,9 +28,11 @@ export function montarApp(deps: Partial<Dependencias> = {}): FastifyInstance {
   const servico = new ServicoDePagamento(db, repo, registro);
   const reconciliacao = new ServicoDeReconciliacao(repo, registro);
   const processador = new ProcessadorDeWebhook(db, repo, registro);
+  const pix = new ServicoPix(db, repo);
 
   const app = criarServidor();
   registrarRotasPagamentos(app, { servico, reconciliacao });
   registrarRotasWebhook(app, { processador });
+  registrarRotasPix(app, { pix });
   return app;
 }
