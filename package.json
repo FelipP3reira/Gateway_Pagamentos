@@ -7,8 +7,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node --env-file=.env --watch src/principal.ts",
-    "migrar": "node --env-file=.env src/db/migrar.ts",
+    "dev": "node --experimental-transform-types --disable-warning=ExperimentalWarning --env-file=.env --watch src/principal.ts",
+    "migrar": "node --experimental-transform-types --disable-warning=ExperimentalWarning --env-file=.env src/db/migrar.ts",
     "tipos": "tsc --noEmit",
     "lint": "eslint .",
     "formatar": "prettier --write .",
