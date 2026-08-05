@@ -4,7 +4,9 @@ import type { ColumnType, Generated } from 'kysely';
 // quem define quais transições entre eles são válidas.
 export type Estado = 'pendente' | 'autorizado' | 'capturado' | 'estornado' | 'cancelado' | 'falhou';
 
-export type Provedor = 'stripe' | 'fake';
+export type Provedor = 'stripe' | 'fake' | 'pix';
+
+export type TipoChavePix = 'aleatoria' | 'cpf' | 'email' | 'telefone';
 
 type CriadaEm = ColumnType<Date, Date | string | undefined, never>;
 
@@ -53,9 +55,31 @@ export interface TabelaEstornos {
   criado_em: CriadaEm;
 }
 
+// Chaves PIX geradas/registradas — em sandbox, não estão no DICT do Banco
+// Central e não recebem dinheiro real.
+export interface TabelaChavesPix {
+  id: Generated<number>;
+  tipo: TipoChavePix;
+  chave: string;
+  titular: string;
+  criada_em: CriadaEm;
+}
+
+// Cobrança PIX: liga um pagamento ao seu txid e ao BR Code (copia e cola).
+export interface TabelaCobrancasPix {
+  id: Generated<number>;
+  pagamento_id: number;
+  txid: string;
+  chave: string;
+  copia_e_cola: string;
+  criada_em: CriadaEm;
+}
+
 export interface BancoDeDados {
   pagamentos: TabelaPagamentos;
   transicoes: TabelaTransicoes;
   webhook_eventos: TabelaWebhookEventos;
   estornos: TabelaEstornos;
+  chaves_pix: TabelaChavesPix;
+  cobrancas_pix: TabelaCobrancasPix;
 }

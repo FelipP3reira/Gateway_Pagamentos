@@ -71,6 +71,36 @@ export async function migrar(url?: string): Promise<void> {
         criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `.execute(db);
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS chaves_pix (
+        id BIGSERIAL PRIMARY KEY,
+        tipo TEXT NOT NULL,
+        chave TEXT NOT NULL,
+        titular TEXT NOT NULL,
+        criada_em TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `.execute(db);
+
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS ix_chaves_pix_chave ON chaves_pix (chave)
+    `.execute(db);
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS cobrancas_pix (
+        id BIGSERIAL PRIMARY KEY,
+        pagamento_id BIGINT NOT NULL REFERENCES pagamentos (id) ON DELETE CASCADE,
+        txid TEXT NOT NULL,
+        chave TEXT NOT NULL,
+        copia_e_cola TEXT NOT NULL,
+        criada_em TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `.execute(db);
+
+    // O txid concilia a cobrança com o webhook de confirmação: precisa ser único.
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS ix_cobrancas_pix_txid ON cobrancas_pix (txid)
+    `.execute(db);
   } finally {
     await db.destroy();
   }
