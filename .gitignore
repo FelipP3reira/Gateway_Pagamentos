@@ -4,3 +4,6 @@ dist
 *.tsbuildinfo
 coverage
 .DS_Store
+
+# Demo local (não versionado)
+demo.ts
