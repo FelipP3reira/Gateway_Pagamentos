@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - '5440:5432'
+    environment:
+      POSTGRES_USER: pagamentos
+      POSTGRES_PASSWORD: pagamentos
+      POSTGRES_DB: pagamentos
+    volumes:
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pagamentos']
+      interval: 3s
+      timeout: 3s
+      retries: 10

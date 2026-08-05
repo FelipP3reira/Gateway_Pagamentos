@@ -1,0 +1,33 @@
+{
+  "name": "gateway-pagamentos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --env-file=.env --watch src/principal.ts",
+    "migrar": "node --env-file=.env src/db/migrar.ts",
+    "tipos": "tsc --noEmit",
+    "lint": "eslint .",
+    "formatar": "prettier --write .",
+    "formato": "prettier --check .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fastify": "^5.1.0",
+    "kysely": "^0.29.4",
+    "pg": "^8.13.1",
+    "stripe": "^17.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@types/pg": "^8.11.10",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^4.0.0"
+  }
+}
