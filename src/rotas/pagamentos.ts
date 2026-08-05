@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { ErroDeAplicacao } from '../erros.ts';
+import type { ServicoDeReconciliacao } from '../dominio/reconciliacao.ts';
 import type { ServicoDePagamento } from '../dominio/servico-pagamento.ts';
 import type { Pagamento } from '../dominio/tipos.ts';
 
@@ -45,9 +46,9 @@ function apresentar(p: Pagamento) {
 
 export function registrarRotasPagamentos(
   app: FastifyInstance,
-  deps: { servico: ServicoDePagamento },
+  deps: { servico: ServicoDePagamento; reconciliacao: ServicoDeReconciliacao },
 ): void {
-  const { servico } = deps;
+  const { servico, reconciliacao } = deps;
 
   app.post<{ Body: CorpoCriar }>(
     '/pagamentos',
@@ -94,5 +95,12 @@ export function registrarRotasPagamentos(
   app.get<{ Params: { id: string } }>('/pagamentos/:id', async (requisicao) => {
     const id = Number(requisicao.params.id);
     return apresentar(await servico.buscar(id));
+  });
+
+  // Reconcilia o estado local com o do provedor (a fonte da verdade).
+  app.post<{ Params: { id: string } }>('/pagamentos/:id/reconciliar', async (requisicao) => {
+    const id = Number(requisicao.params.id);
+    const { pagamento, ajustado } = await reconciliacao.reconciliar(id);
+    return { ...apresentar(pagamento), ajustado };
   });
 }

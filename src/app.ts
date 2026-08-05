@@ -3,6 +3,7 @@ import type { Kysely } from 'kysely';
 
 import { db as dbPadrao } from './db/conexao.ts';
 import type { BancoDeDados } from './db/esquema.ts';
+import { ServicoDeReconciliacao } from './dominio/reconciliacao.ts';
 import { RepositorioDePagamentos } from './dominio/repositorio.ts';
 import { ServicoDePagamento } from './dominio/servico-pagamento.ts';
 import { montarRegistro, type RegistroDeProvedores } from './provedores/registro.ts';
@@ -23,10 +24,11 @@ export function montarApp(deps: Partial<Dependencias> = {}): FastifyInstance {
   const registro = deps.registro ?? montarRegistro();
   const repo = new RepositorioDePagamentos(db);
   const servico = new ServicoDePagamento(db, repo, registro);
+  const reconciliacao = new ServicoDeReconciliacao(repo, registro);
   const processador = new ProcessadorDeWebhook(db, repo, registro);
 
   const app = criarServidor();
-  registrarRotasPagamentos(app, { servico });
+  registrarRotasPagamentos(app, { servico, reconciliacao });
   registrarRotasWebhook(app, { processador });
   return app;
 }
