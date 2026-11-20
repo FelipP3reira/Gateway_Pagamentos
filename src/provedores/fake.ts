@@ -27,6 +27,8 @@ interface CobrancaFake {
  */
 export class ProvedorFake implements ProvedorDePagamento {
   readonly nome = 'fake' as const;
+  // Igual ao teto usual do cartão no Brasil, para os testes exercitarem parcelas.
+  readonly parcelasMaximas = 12;
   private readonly cobrancas = new Map<string, CobrancaFake>();
 
   private readonly segredo: string;

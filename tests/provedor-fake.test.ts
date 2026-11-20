@@ -10,6 +10,7 @@ function dados(sobrescrever: Partial<DadosCobranca> = {}): DadosCobranca {
     tokenMetodo: 'tok_fake_ok',
     capturaAutomatica: false,
     chaveIdempotencia: 'k1',
+    parcelas: 1,
     ...sobrescrever,
   };
 }
