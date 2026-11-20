@@ -57,19 +57,22 @@ Todas as rotas exigem `Authorization: Bearer <GATEWAY_API_KEY>`, exceto
 `GET /saude` (health check, confere o banco) e `/webhooks/*` (protegidas pela
 assinatura do provedor e por limite de taxa por IP). Sem a chave: `401`.
 
-| Método | Rota                          | O que faz                                   |
-| ------ | ----------------------------- | ------------------------------------------- |
-| POST   | `/pagamentos`                 | Cria a cobrança (header `Idempotency-Key`). |
-| POST   | `/pagamentos/:id/capturar`    | Captura o valor autorizado.                 |
-| POST   | `/pagamentos/:id/estornar`    | Estorna o pagamento capturado.              |
-| POST   | `/pagamentos/:id/cancelar`    | Cancela antes da captura.                   |
-| POST   | `/pagamentos/:id/reconciliar` | Alinha o estado local com o do provedor.    |
-| GET    | `/pagamentos/:id`             | Consulta o pagamento.                       |
-| POST   | `/webhooks/:provedor`         | Recebe eventos (assinatura obrigatória).    |
-| GET    | `/saude`                      | Health check (público).                     |
-| POST   | `/pix/chaves`                 | Gera/registra uma chave PIX (sandbox).      |
-| POST   | `/pix/cobrancas`              | Cria a cobrança PIX: copia-e-cola + QR.     |
-| POST   | `/webhooks/pix`               | Confirma o pagamento PIX (assinado).        |
+| Método | Rota                            | O que faz                                   |
+| ------ | ------------------------------- | ------------------------------------------- |
+| POST   | `/pagamentos`                   | Cria a cobrança (header `Idempotency-Key`). |
+| POST   | `/pagamentos/:id/capturar`      | Captura o valor autorizado.                 |
+| POST   | `/pagamentos/:id/estornar`      | Estorna o pagamento capturado.              |
+| POST   | `/pagamentos/:id/cancelar`      | Cancela antes da captura.                   |
+| POST   | `/pagamentos/:id/reconciliar`   | Alinha o estado local com o do provedor.    |
+| GET    | `/pagamentos/:id`               | Consulta o pagamento.                       |
+| GET    | `/pagamentos?referenciaPedido=` | Tentativas de um pedido da loja.            |
+| GET    | `/notificacoes`                 | Notificações para a loja (`?status=`).      |
+| POST   | `/notificacoes/:id/reenviar`    | Reenvia uma notificação que falhou.         |
+| POST   | `/webhooks/:provedor`           | Recebe eventos (assinatura obrigatória).    |
+| GET    | `/saude`                        | Health check (público).                     |
+| POST   | `/pix/chaves`                   | Gera/registra uma chave PIX (sandbox).      |
+| POST   | `/pix/cobrancas`                | Cria a cobrança PIX: copia-e-cola + QR.     |
+| POST   | `/webhooks/pix`                 | Confirma o pagamento PIX (assinado).        |
 
 O corpo de `POST /pagamentos` recebe `provedor`, `valorCentavos` (inteiro),
 `moeda`, `tokenMetodo` (o **token do provedor**, nunca o cartão) e
@@ -116,6 +119,42 @@ assinatura secreta para `MERCADOPAGO_WEBHOOK_SECRET`. O gateway valida o
 `x-signature` (HMAC-SHA256 de `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`,
 janela de 300 s contra replay), consulta o pagamento na API e só então aplica a
 mudança. Se a consulta falhar, responde `502` e o Mercado Pago reenvia.
+
+### Referência do pedido
+
+`referenciaPedido` (até 64 caracteres, `A-Z a-z 0-9 . _ : -`) liga o pagamento ao
+pedido da loja e vai para o Mercado Pago como `external_reference`. Não é única:
+um pedido pode ter várias tentativas (cartão recusado, depois Pix).
+`GET /pagamentos?referenciaPedido=PED-1001` devolve `{ "pagamentos": [...] }`, da
+mais recente para a mais antiga.
+
+### Notificação para a loja
+
+Toda mudança de estado depois da criação (webhook, reconciliação, captura,
+estorno, cancelamento) grava uma notificação **na mesma transação** (outbox) e o
+gateway entrega por `POST {LOJA_URL}/api/webhooks/gateway`:
+
+```jsonc
+// Cabeçalhos: X-Gateway-Evento: <eventoId>
+//             X-Gateway-Assinatura: t=<unix seg>,v1=<hex>
+{
+  "evento": "pagamento.atualizado",
+  "eventoId": "8f0c…",          // deduplicar por aqui
+  "sequencia": 412,             // ignorar se menor que a já aplicada
+  "ocorridoEm": "2026-…",
+  "pagamento": { "id": 7, "estado": "capturado", "referenciaPedido": "PED-1001", … }
+}
+```
+
+**Verificação na loja:** `v1 = HMAC-SHA256(LOJA_WEBHOOK_SECRET, "<t>.<corpo cru>")`
+em hex, comparado em tempo constante, recusando `t` com mais de 5 minutos de
+diferença. Responder 2xx rápido. Qualquer outra resposta (ou timeout de 10 s)
+re-tenta com backoff exponencial (30 s, 1 min, 2 min… até 1 h, ±20%) por até 10
+tentativas; depois a notificação fica `falhou` e pode ser reenviada por
+`POST /notificacoes/:id/reenviar`. Cada tentativa fica registrada. A entrega é
+"pelo menos uma vez" e pode chegar fora de ordem — por isso `eventoId` e
+`sequencia`. O QR do Pix não vai na notificação; a loja relê em
+`GET /pagamentos/:id`.
 
 O provider `fake` também aceita `metodo: "pix"` (QR e copia e cola válidos de uma
 chave de teste), liquidado por um webhook do fake com `estado: "capturado"`:
@@ -185,8 +224,9 @@ verdade exigiria, além do que está aqui:
   certificado. Nós já não armazenamos, mas sem as garantias formais.
 - **Gestão e rotação de chaves/segredos** (KMS/secret manager), não `.env`.
 - **3-D Secure / SCA** e o fluxo de autenticação do portador.
-- **Retry e fila de webhooks** com backoff e ordenação — aqui o processamento é
-  síncrono e idempotente, mas sem re-entrega própria.
+- **Fila de webhooks de entrada**: os webhooks dos provedores são processados de
+  forma síncrona e idempotente (o provedor re-tenta). A notificação de saída
+  para a loja já tem outbox, backoff e reenvio.
 - **Auditoria imutável** (append-only assinado) e retenção/observabilidade.
 - **Antifraude, limites, chargebacks e disputas**, reconciliação financeira
   contábil (não só de estado).
@@ -206,3 +246,4 @@ verdade exigiria, além do que está aqui:
 - [x] Chave da API entre serviços, Dockerfile, health check com banco, rate limit nos webhooks
 - [x] Parcelas, método e emissor no pagamento; pagador repassado ao provedor
 - [x] Adaptador Mercado Pago: cartão parcelado, Pix real, webhook com assinatura oficial
+- [x] Referência do pedido, consulta por pedido e notificação assinada para a loja (outbox)

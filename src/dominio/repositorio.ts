@@ -1,7 +1,10 @@
-import type { Kysely, Selectable } from 'kysely';
+import { randomUUID } from 'node:crypto';
+
+import type { Kysely, Selectable, Transaction } from 'kysely';
 
 import type { BancoDeDados, Estado, Provedor, TabelaPagamentos } from '../db/esquema.ts';
 import { ErroDeAplicacao } from '../erros.ts';
+import { montarPayloadNotificacao } from '../notificacoes/payload.ts';
 import { caminhoAte, garantirTransicao } from './maquina-estados.ts';
 import type { DadosPix, NovaCobranca, Pagamento } from './tipos.ts';
 
@@ -26,16 +29,53 @@ function mapear(linha: Selectable<TabelaPagamentos>): Pagamento {
           expiraEm: linha.pix_expira_em,
         }
       : null,
+    referenciaPedido: linha.referencia_pedido,
     criadoEm: linha.criado_em,
     atualizadoEm: linha.atualizado_em,
   };
 }
 
+export interface OpcoesRepositorio {
+  // Grava no outbox uma notificação para a loja a cada mudança de estado.
+  // Desligado sem LOJA_URL (desenvolvimento) para não acumular fila.
+  notificarLoja?: boolean;
+}
+
 export class RepositorioDePagamentos {
   private readonly db: Kysely<BancoDeDados>;
+  private readonly notificarLoja: boolean;
 
-  constructor(db: Kysely<BancoDeDados>) {
+  constructor(db: Kysely<BancoDeDados>, opcoes: OpcoesRepositorio = {}) {
     this.db = db;
+    this.notificarLoja = opcoes.notificarLoja ?? false;
+  }
+
+  /**
+   * Enfileira a notificação na MESMA transação da mudança de estado: se a
+   * transição grava, a notificação grava; se uma falha, nenhuma fica. É o que
+   * garante que a loja nunca perde uma mudança (padrão outbox).
+   */
+  private async enfileirarNotificacao(
+    tx: Transaction<BancoDeDados>,
+    linha: Selectable<TabelaPagamentos>,
+    sequencia: number,
+  ): Promise<void> {
+    if (!this.notificarLoja) {
+      return;
+    }
+    const eventoId = randomUUID();
+    const agora = new Date();
+    const pagamento = mapear({ ...linha, atualizado_em: agora });
+    await tx
+      .insertInto('notificacoes_loja')
+      .values({
+        pagamento_id: linha.id,
+        evento_id: eventoId,
+        sequencia,
+        estado: linha.estado,
+        payload: JSON.stringify(montarPayloadNotificacao(pagamento, eventoId, sequencia, agora)),
+      })
+      .execute();
   }
 
   /**
@@ -59,6 +99,7 @@ export class RepositorioDePagamentos {
           metodo_pagamento_id: nova.metodoPagamentoId ?? null,
           emissor_id: nova.emissorId ?? null,
           metodo: nova.metodo ?? 'cartao',
+          referencia_pedido: nova.referenciaPedido ?? null,
         })
         .onConflict((oc) => oc.column('chave_idempotencia').doNothing())
         .returningAll()
@@ -118,6 +159,19 @@ export class RepositorioDePagamentos {
       .execute();
   }
 
+  // Tentativas de pagamento de um pedido da loja, da mais recente para a mais
+  // antiga (um pedido pode ter várias: cartão recusado e depois Pix).
+  async listarPorReferenciaPedido(referenciaPedido: string): Promise<Pagamento[]> {
+    const linhas = await this.db
+      .selectFrom('pagamentos')
+      .selectAll()
+      .where('referencia_pedido', '=', referenciaPedido)
+      .orderBy('criado_em', 'desc')
+      .orderBy('id', 'desc')
+      .execute();
+    return linhas.map(mapear);
+  }
+
   // Acha o pagamento pela referência do provedor — o webhook chega com ela, não
   // com o nosso id.
   async buscarPorReferencia(provedor: Provedor, referencia: string): Promise<Pagamento | null> {
@@ -157,7 +211,7 @@ export class RepositorioDePagamentos {
         .where('id', '=', id)
         .execute();
 
-      await tx
+      const transicao = await tx
         .insertInto('transicoes')
         .values({
           pagamento_id: id,
@@ -165,8 +219,10 @@ export class RepositorioDePagamentos {
           para_estado: para,
           motivo: motivo ?? null,
         })
-        .execute();
+        .returning('id')
+        .executeTakeFirstOrThrow();
 
+      await this.enfileirarNotificacao(tx, { ...atual, estado: para }, transicao.id);
       return { ...mapear(atual), estado: para };
     });
   }
@@ -200,11 +256,14 @@ export class RepositorioDePagamentos {
       }
 
       let de = atual.estado;
+      let ultimaTransicao = 0;
       for (const para of caminho) {
-        await tx
+        const transicao = await tx
           .insertInto('transicoes')
           .values({ pagamento_id: id, de_estado: de, para_estado: para, motivo })
-          .execute();
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        ultimaTransicao = transicao.id;
         de = para;
       }
       await tx
@@ -212,6 +271,9 @@ export class RepositorioDePagamentos {
         .set({ estado: alvo, atualizado_em: new Date() })
         .where('id', '=', id)
         .execute();
+
+      // Uma notificação só, com o estado final (não uma por passo).
+      await this.enfileirarNotificacao(tx, { ...atual, estado: alvo }, ultimaTransicao);
 
       return { pagamento: { ...mapear(atual), estado: alvo }, mudou: true };
     });

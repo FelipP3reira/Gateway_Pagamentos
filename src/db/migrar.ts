@@ -48,6 +48,16 @@ export async function migrar(url?: string): Promise<void> {
       UPDATE pagamentos SET metodo = 'pix' WHERE provedor = 'pix' AND metodo <> 'pix'
     `.execute(db);
 
+    // G5 — referência do pedido na loja (consulta e external_reference).
+    await sql`
+      ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS referencia_pedido TEXT
+    `.execute(db);
+    await sql`
+      CREATE INDEX IF NOT EXISTS ix_pagamentos_referencia_pedido
+        ON pagamentos (referencia_pedido, criado_em DESC)
+        WHERE referencia_pedido IS NOT NULL
+    `.execute(db);
+
     // Idempotência da criação: a mesma chave nunca gera dois pagamentos.
     await sql`
       CREATE UNIQUE INDEX IF NOT EXISTS ix_pagamentos_idempotencia
@@ -125,6 +135,43 @@ export async function migrar(url?: string): Promise<void> {
     // O txid concilia a cobrança com o webhook de confirmação: precisa ser único.
     await sql`
       CREATE UNIQUE INDEX IF NOT EXISTS ix_cobrancas_pix_txid ON cobrancas_pix (txid)
+    `.execute(db);
+
+    // G5 — outbox de notificações para a loja e o log de cada tentativa.
+    await sql`
+      CREATE TABLE IF NOT EXISTS notificacoes_loja (
+        id BIGSERIAL PRIMARY KEY,
+        pagamento_id BIGINT NOT NULL REFERENCES pagamentos (id) ON DELETE CASCADE,
+        evento_id TEXT NOT NULL,
+        sequencia BIGINT NOT NULL,
+        estado TEXT NOT NULL,
+        payload JSONB NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        tentativas INTEGER NOT NULL DEFAULT 0,
+        proxima_tentativa_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+        ultimo_erro TEXT,
+        criada_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+        entregue_em TIMESTAMPTZ
+      )
+    `.execute(db);
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS ix_notificacoes_loja_evento ON notificacoes_loja (evento_id)
+    `.execute(db);
+    // O entregador busca as pendentes vencidas, em ordem.
+    await sql`
+      CREATE INDEX IF NOT EXISTS ix_notificacoes_loja_fila
+        ON notificacoes_loja (proxima_tentativa_em, id) WHERE status = 'pendente'
+    `.execute(db);
+    await sql`
+      CREATE TABLE IF NOT EXISTS tentativas_notificacao (
+        id BIGSERIAL PRIMARY KEY,
+        notificacao_id BIGINT NOT NULL REFERENCES notificacoes_loja (id) ON DELETE CASCADE,
+        numero INTEGER NOT NULL,
+        status_http INTEGER,
+        erro TEXT,
+        duracao_ms INTEGER NOT NULL,
+        criada_em TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
     `.execute(db);
   } finally {
     await db.destroy();

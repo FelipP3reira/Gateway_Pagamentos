@@ -228,6 +228,7 @@ export class AdaptadorMercadoPago implements ProvedorDePagamento {
       transaction_amount: centavosParaReais(dados.valorCentavos),
       description: dados.descricao,
       payer: pagador,
+      ...(dados.referenciaPedido ? { external_reference: dados.referenciaPedido } : {}),
       ...(this.urlNotificacao ? { notification_url: this.urlNotificacao } : {}),
     };
 

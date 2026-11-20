@@ -130,3 +130,47 @@ backlog.
 **Fake também cobra Pix.** Para o E2E de Pix da loja rodar sem provedor: QR e
 copia e cola válidos de uma chave de teste, liquidados pelo webhook assinado do
 fake.
+
+## G5 — Referência do pedido e notificação para a loja
+
+**`referenciaPedido` não é única.** Um pedido pode ter várias tentativas
+(cartão recusado, depois Pix). Índice parcial `(referencia_pedido, criado_em
+DESC)`; a consulta exige o filtro (não há listagem geral). Formato restrito
+(`A-Z a-z 0-9 . _ : -`, até 64) para não atrapalhar query string nem o painel
+do provedor. Vai ao Mercado Pago como `external_reference`.
+
+**Outbox na mesma transação.** A notificação é gravada dentro da transação de
+`transicionar`/`avancar`: mudou o estado, existe notificação; a transição falhou,
+não existe. Sem fila externa (Redis, SQS): o Postgres que já existe basta para
+o volume de uma loja.
+
+**Notifica toda mudança depois da criação.** Inclusive as feitas pela própria
+loja via rota (captura, estorno): é uma regra só, e a loja já precisa ser
+idempotente. A criação em si não notifica (a loja tem a resposta síncrona).
+Um evento que percorre vários passos gera uma notificação só, com o estado
+final.
+
+**`eventoId` + `sequencia` em vez de garantir ordem.** A entrega é "pelo menos
+uma vez" e uma re-tentativa pode chegar depois de um evento mais novo.
+`sequencia` é o id da última transição (cresce sempre por pagamento): a loja
+descarta o que for menor do que já aplicou.
+
+**Assinatura `t=<ts>,v1=<hex>` sobre `<ts>.<corpo>`.** O timestamp dentro do
+HMAC deixa a loja recusar reenvios antigos (janela de 5 min).
+
+**Entregador no próprio processo, com aluguel.** O serviço fica sempre ligado
+(Railway), então um laço a cada 5 s basta. Cada rodada "aluga" o lote com
+`FOR UPDATE SKIP LOCKED` empurrando `proxima_tentativa_em` para depois do tempo
+máximo de entrega: duas instâncias nunca entregam a mesma notificação ao mesmo
+tempo, e se o processo cair a notificação volta quando o aluguel vence.
+
+**Backoff 30 s × 2ⁿ até 1 h, ±20%, 10 tentativas (≈ 6 h).** Depois fica
+`falhou` e não volta sozinha: `POST /notificacoes/:id/reenviar` zera as
+tentativas. Cada tentativa vai para `tentativas_notificacao`.
+
+**Sem LOJA_URL, o outbox fica desligado.** Em desenvolvimento não acumula fila
+que dispararia de uma vez ao ligar. Em produção as duas variáveis são
+obrigatórias (HTTPS, segredo de 32+).
+
+**O QR do Pix fica fora da notificação.** São alguns KB que a loja já recebeu na
+criação; se precisar, relê em `GET /pagamentos/:id`.

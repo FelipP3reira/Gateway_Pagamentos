@@ -62,6 +62,25 @@ export function carregarConfig(env: Env = process.env) {
     );
   }
 
+  // Notificação para a loja. Em produção é obrigatória: é por ela que a loja
+  // fica sabendo do pagamento aprovado.
+  const lojaUrl = opcional(env, 'LOJA_URL');
+  const lojaSegredo = opcional(env, 'LOJA_WEBHOOK_SECRET');
+  if (Boolean(lojaUrl) !== Boolean(lojaSegredo)) {
+    throw new Error('LOJA_URL e LOJA_WEBHOOK_SECRET andam juntas: defina as duas ou nenhuma.');
+  }
+  if (producao && (!lojaUrl || !lojaSegredo)) {
+    throw new Error('LOJA_URL e LOJA_WEBHOOK_SECRET são obrigatórias em produção.');
+  }
+  if (producao && lojaUrl && !lojaUrl.startsWith('https://')) {
+    throw new Error('LOJA_URL deve começar com https:// em produção.');
+  }
+  if (producao && lojaSegredo && lojaSegredo.length < TAMANHO_MINIMO_CHAVE) {
+    throw new Error(
+      `LOJA_WEBHOOK_SECRET fraco: use ao menos ${TAMANHO_MINIMO_CHAVE} caracteres em produção.`,
+    );
+  }
+
   const urlNotificacao = opcional(env, 'MERCADOPAGO_URL_NOTIFICACAO');
   if (urlNotificacao && !urlNotificacao.startsWith('https://')) {
     // A API do Mercado Pago recusa notification_url sem HTTPS.
@@ -87,6 +106,8 @@ export function carregarConfig(env: Env = process.env) {
     // Segredo do provider fake (HMAC dos webhooks). O fake e o PIX simulado só
     // existem fora de produção: lá eles seriam uma porta para forjar pagamentos.
     fakeWebhookSecret: producao ? undefined : obrigatoria(env, 'FAKE_WEBHOOK_SECRET'),
+    lojaUrl,
+    lojaWebhookSecret: lojaSegredo,
     // Mercado Pago: liga quando token e segredo do webhook existem. Em Preview e
     // desenvolvimento, use as credenciais de TESTE; em produção, as de produção.
     mercadoPagoAccessToken: opcional(env, 'MERCADOPAGO_ACCESS_TOKEN'),
