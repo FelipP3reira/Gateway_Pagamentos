@@ -3,7 +3,11 @@ import type { FastifyInstance } from 'fastify';
 import { ErroDeAplicacao } from '../erros.ts';
 import type { ServicoDeReconciliacao } from '../dominio/reconciliacao.ts';
 import type { ServicoDePagamento } from '../dominio/servico-pagamento.ts';
-import type { Pagamento } from '../dominio/tipos.ts';
+import type { Pagador, Pagamento } from '../dominio/tipos.ts';
+
+// Teto absoluto de parcelas aceito na API. Cada provedor ainda impõe o seu
+// (`parcelasMaximas`), e a regra comercial (juros, parcela mínima) é da loja.
+const PARCELAS_TETO = 24;
 
 interface CorpoCriar {
   provedor: 'stripe' | 'fake';
@@ -12,6 +16,10 @@ interface CorpoCriar {
   tokenMetodo: string;
   descricao?: string;
   capturaAutomatica?: boolean;
+  parcelas?: number;
+  metodoPagamentoId?: string;
+  emissorId?: string;
+  pagador?: Pagador;
 }
 
 const schemaCriar = {
@@ -25,6 +33,20 @@ const schemaCriar = {
     tokenMetodo: { type: 'string', minLength: 1 },
     descricao: { type: 'string' },
     capturaAutomatica: { type: 'boolean' },
+    parcelas: { type: 'integer', minimum: 1, maximum: PARCELAS_TETO },
+    metodoPagamentoId: { type: 'string', minLength: 1, maxLength: 64 },
+    emissorId: { type: 'string', minLength: 1, maxLength: 64 },
+    pagador: {
+      type: 'object',
+      required: ['email'],
+      additionalProperties: false,
+      properties: {
+        email: { type: 'string', format: 'email', maxLength: 254 },
+        tipoDocumento: { type: 'string', enum: ['CPF', 'CNPJ'] },
+        // Só dígitos: 11 (CPF) ou 14 (CNPJ). O dígito verificador a loja valida.
+        documento: { type: 'string', pattern: '^(\\d{11}|\\d{14})$' },
+      },
+    },
   },
 };
 
@@ -39,6 +61,9 @@ function apresentar(p: Pagamento) {
     moeda: p.moeda,
     referenciaExterna: p.referenciaExterna,
     descricao: p.descricao,
+    parcelas: p.parcelas,
+    metodoPagamentoId: p.metodoPagamentoId,
+    emissorId: p.emissorId,
     criadoEm: p.criadoEm,
     atualizadoEm: p.atualizadoEm,
   };
@@ -73,6 +98,10 @@ export function registrarRotasPagamentos(
         descricao: corpo.descricao,
         capturaAutomatica: corpo.capturaAutomatica ?? false,
         chaveIdempotencia: chave,
+        parcelas: corpo.parcelas,
+        metodoPagamentoId: corpo.metodoPagamentoId,
+        emissorId: corpo.emissorId,
+        pagador: corpo.pagador,
       });
 
       return resposta.status(201).send(apresentar(pagamento));
