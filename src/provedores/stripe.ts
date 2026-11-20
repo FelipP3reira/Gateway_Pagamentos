@@ -35,10 +35,13 @@ export interface ClienteStripe {
 export class AdaptadorStripe implements ProvedorDePagamento {
   readonly nome = 'stripe' as const;
 
-  constructor(
-    private readonly stripe: ClienteStripe,
-    private readonly segredoWebhook: string,
-  ) {}
+  private readonly stripe: ClienteStripe;
+  private readonly segredoWebhook: string;
+
+  constructor(stripe: ClienteStripe, segredoWebhook: string) {
+    this.stripe = stripe;
+    this.segredoWebhook = segredoWebhook;
+  }
 
   async autorizar(dados: DadosCobranca): Promise<ResultadoProvedor> {
     const intent = await this.stripe.paymentIntents.create(

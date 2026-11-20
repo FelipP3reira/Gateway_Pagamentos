@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import type { Kysely } from 'kysely';
 
-import { config } from '../config.ts';
 import type { BancoDeDados } from '../db/esquema.ts';
 import { AssinaturaInvalida, ErroDeAplicacao } from '../erros.ts';
 import { podeTransicionar } from '../dominio/maquina-estados.ts';
@@ -32,10 +31,16 @@ export interface CobrancaPix {
 }
 
 export class ServicoPix {
-  constructor(
-    private readonly db: Kysely<BancoDeDados>,
-    private readonly repo: RepositorioDePagamentos,
-  ) {}
+  private readonly db: Kysely<BancoDeDados>;
+  private readonly repo: RepositorioDePagamentos;
+  // Segredo do HMAC do webhook simulado. O PIX simulado só existe fora de produção.
+  private readonly segredoWebhook: string;
+
+  constructor(db: Kysely<BancoDeDados>, repo: RepositorioDePagamentos, segredoWebhook: string) {
+    this.db = db;
+    this.repo = repo;
+    this.segredoWebhook = segredoWebhook;
+  }
 
   /** Gera/registra uma chave PIX (sandbox — não vai ao DICT). */
   async gerarChave(tipo: TipoChave, titular: string, valor?: string): Promise<ChavePix> {
@@ -120,7 +125,7 @@ export class ServicoPix {
     corpoCru: Buffer,
     assinatura: string | undefined,
   ): Promise<{ processado: boolean }> {
-    if (!assinatura || !verificarHmac(corpoCru, assinatura, config.fakeWebhookSecret)) {
+    if (!assinatura || !verificarHmac(corpoCru, assinatura, this.segredoWebhook)) {
       throw new AssinaturaInvalida();
     }
     const evento = JSON.parse(corpoCru.toString('utf8')) as {

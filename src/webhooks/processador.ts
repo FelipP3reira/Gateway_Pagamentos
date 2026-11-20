@@ -11,11 +11,19 @@ export interface ResultadoWebhook {
 }
 
 export class ProcessadorDeWebhook {
+  private readonly db: Kysely<BancoDeDados>;
+  private readonly repo: RepositorioDePagamentos;
+  private readonly registro: RegistroDeProvedores;
+
   constructor(
-    private readonly db: Kysely<BancoDeDados>,
-    private readonly repo: RepositorioDePagamentos,
-    private readonly registro: RegistroDeProvedores,
-  ) {}
+    db: Kysely<BancoDeDados>,
+    repo: RepositorioDePagamentos,
+    registro: RegistroDeProvedores,
+  ) {
+    this.db = db;
+    this.repo = repo;
+    this.registro = registro;
+  }
 
   /**
    * Verifica a assinatura, garante o processamento único e aplica o efeito.

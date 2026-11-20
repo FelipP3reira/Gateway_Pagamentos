@@ -1,12 +1,13 @@
 // Erro previsto da aplicação: carrega o status HTTP e um código estável para o
 // cliente. O handler central transforma no envelope { erro: { codigo, mensagem } }.
 export class ErroDeAplicacao extends Error {
-  constructor(
-    readonly statusCode: number,
-    readonly codigo: string,
-    mensagem: string,
-  ) {
+  readonly statusCode: number;
+  readonly codigo: string;
+
+  constructor(statusCode: number, codigo: string, mensagem: string) {
     super(mensagem);
+    this.statusCode = statusCode;
+    this.codigo = codigo;
     this.name = 'ErroDeAplicacao';
   }
 }

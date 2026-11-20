@@ -36,7 +36,24 @@ Os testes rodam contra ele, para nunca tocar nos dados de desenvolvimento.
 A Stripe é opcional: sem `STRIPE_SECRET_KEY`, o adaptador fica desligado e o
 provider fake cobre o fluxo. A suíte não depende de rede nem de chave real.
 
+## Deploy (Docker)
+
+```bash
+docker build -t gateway-pagamentos .
+docker run -p 3011:3011 \
+  -e DATABASE_URL=... -e GATEWAY_API_KEY=$(openssl rand -hex 32) \
+  gateway-pagamentos
+```
+
+A imagem sobe com `AMBIENTE=producao`: roda a migração (idempotente) e depois o
+servidor. Em produção, `GATEWAY_API_KEY` é obrigatória e o provider fake e o PIX
+simulado ficam desligados. Todas as variáveis estão em `.env.example`.
+
 ## API
+
+Todas as rotas exigem `Authorization: Bearer <GATEWAY_API_KEY>`, exceto
+`GET /saude` (health check, confere o banco) e `/webhooks/*` (protegidas pela
+assinatura do provedor e por limite de taxa por IP). Sem a chave: `401`.
 
 | Método | Rota                          | O que faz                                   |
 | ------ | ----------------------------- | ------------------------------------------- |
@@ -47,6 +64,7 @@ provider fake cobre o fluxo. A suíte não depende de rede nem de chave real.
 | POST   | `/pagamentos/:id/reconciliar` | Alinha o estado local com o do provedor.    |
 | GET    | `/pagamentos/:id`             | Consulta o pagamento.                       |
 | POST   | `/webhooks/:provedor`         | Recebe eventos (assinatura obrigatória).    |
+| GET    | `/saude`                      | Health check (público).                     |
 | POST   | `/pix/chaves`                 | Gera/registra uma chave PIX (sandbox).      |
 | POST   | `/pix/cobrancas`              | Cria a cobrança PIX: copia-e-cola + QR.     |
 | POST   | `/webhooks/pix`               | Confirma o pagamento PIX (assinado).        |
@@ -137,3 +155,4 @@ verdade exigiria, além do que está aqui:
 - [x] Serviço de pagamento, idempotência e webhooks
 - [x] Reconciliação e README final
 - [x] PIX (sandbox): chave, cobrança com BR Code + QR e confirmação por webhook
+- [x] Chave da API entre serviços, Dockerfile, health check com banco, rate limit nos webhooks

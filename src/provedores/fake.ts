@@ -29,7 +29,15 @@ export class ProvedorFake implements ProvedorDePagamento {
   readonly nome = 'fake' as const;
   private readonly cobrancas = new Map<string, CobrancaFake>();
 
-  constructor(private readonly segredo: string = config.fakeWebhookSecret) {}
+  private readonly segredo: string;
+
+  constructor(segredo: string | undefined = config.fakeWebhookSecret) {
+    // Em produção não há segredo do fake — e o fake nem é registrado lá.
+    if (!segredo) {
+      throw new Error('O provider fake exige FAKE_WEBHOOK_SECRET (só existe fora de produção).');
+    }
+    this.segredo = segredo;
+  }
 
   autorizar(dados: DadosCobranca): Promise<ResultadoProvedor> {
     const referenciaExterna = `fake_pi_${randomUUID()}`;
