@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { montarApp } from '../src/app.ts';
+import { RegistroDeProvedores } from '../src/provedores/registro.ts';
 import { criarBanco } from '../src/db/conexao.ts';
 import { TOKEN_QUE_FALHA } from '../src/provedores/fake.ts';
 import { limparBanco } from './auxiliar.ts';
@@ -100,5 +101,24 @@ describe('fluxo de pagamento pelas rotas', () => {
       payload: { provedor: 'fake', valorCentavos: 0, moeda: 'BRL', tokenMetodo: 'tok_fake_ok' },
     });
     expect(resposta.statusCode).toBe(400);
+  });
+
+  it('provedor indisponível não deixa pagamento órfão no banco', async () => {
+    const semFake = montarApp({ db, registro: new RegistroDeProvedores() });
+    const resposta = await semFake.inject({
+      method: 'POST',
+      url: '/pagamentos',
+      headers: { 'idempotency-key': 'k-sem-provedor' },
+      payload: { provedor: 'fake', valorCentavos: 100, moeda: 'BRL', tokenMetodo: 'tok_fake_ok' },
+    });
+    expect(resposta.statusCode).toBe(400);
+    expect(resposta.json()).toMatchObject({ erro: { codigo: 'provedor_indisponivel' } });
+
+    const total = await db
+      .selectFrom('pagamentos')
+      .select((eb) => eb.fn.countAll<number>().as('n'))
+      .executeTakeFirstOrThrow();
+    expect(Number(total.n)).toBe(0);
+    await semFake.close();
   });
 });

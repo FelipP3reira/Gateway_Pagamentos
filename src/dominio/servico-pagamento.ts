@@ -8,11 +8,19 @@ import type { RepositorioDePagamentos } from './repositorio.ts';
 import type { NovaCobranca, Pagamento } from './tipos.ts';
 
 export class ServicoDePagamento {
+  private readonly db: Kysely<BancoDeDados>;
+  private readonly repo: RepositorioDePagamentos;
+  private readonly registro: RegistroDeProvedores;
+
   constructor(
-    private readonly db: Kysely<BancoDeDados>,
-    private readonly repo: RepositorioDePagamentos,
-    private readonly registro: RegistroDeProvedores,
-  ) {}
+    db: Kysely<BancoDeDados>,
+    repo: RepositorioDePagamentos,
+    registro: RegistroDeProvedores,
+  ) {
+    this.db = db;
+    this.repo = repo;
+    this.registro = registro;
+  }
 
   /**
    * Cria a cobrança. Idempotente pela chave: se o pagamento já existe, devolve
@@ -21,12 +29,14 @@ export class ServicoDePagamento {
    * provedor e caminha pela máquina de estados.
    */
   async criar(nova: NovaCobranca): Promise<Pagamento> {
+    // Provedor indisponível é barrado antes de gravar: senão sobraria um
+    // pagamento `pendente` órfão que nunca falou com provedor nenhum.
+    const provedor = this.registro.obter(nova.provedor);
+
     const { pagamento, nova: primeira } = await this.repo.criarIdempotente(nova);
     if (!primeira) {
       return pagamento;
     }
-
-    const provedor = this.registro.obter(nova.provedor);
 
     let resultado;
     try {
