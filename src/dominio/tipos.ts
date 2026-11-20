@@ -26,6 +26,8 @@ export interface NovaCobranca {
   // pessoal que não precisa — LGPD). A loja é a dona do cadastro.
   pagador?: Pagador;
   pixExpiraEmMinutos?: number;
+  // Id do pedido na loja.
+  referenciaPedido?: string;
 }
 
 export interface Pagamento {
@@ -42,6 +44,7 @@ export interface Pagamento {
   metodo: Metodo;
   // Só nas cobranças Pix de provedor real.
   pix: DadosPix | null;
+  referenciaPedido: string | null;
   criadoEm: Date;
   atualizadoEm: Date;
 }

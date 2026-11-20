@@ -9,6 +9,7 @@ import { RepositorioDePagamentos } from './dominio/repositorio.ts';
 import { ServicoDePagamento } from './dominio/servico-pagamento.ts';
 import { ServicoPix } from './pix/servico-pix.ts';
 import { montarRegistro, type RegistroDeProvedores } from './provedores/registro.ts';
+import { registrarRotasNotificacoes } from './rotas/notificacoes.ts';
 import { registrarRotasPagamentos } from './rotas/pagamentos.ts';
 import { registrarRotasPix } from './rotas/pix.ts';
 import { registrarRotasWebhook, type LimiteDeTaxa } from './rotas/webhooks.ts';
@@ -25,6 +26,8 @@ export interface Dependencias {
   // Segredo do PIX simulado. Ausente (produção) = rotas /pix/* não existem.
   segredoPixSimulado: string | undefined;
   limiteWebhooksPorMinuto: number;
+  // Grava notificações para a loja a cada mudança de estado (outbox).
+  notificarLoja: boolean;
 }
 
 // Monta o servidor com as dependências ligadas. Os testes injetam o que
@@ -40,7 +43,8 @@ export function montarApp(deps: Partial<Dependencias> = {}): FastifyInstance {
     timeWindow: '1 minute',
   };
 
-  const repo = new RepositorioDePagamentos(db);
+  const notificarLoja = deps.notificarLoja ?? Boolean(config.lojaUrl && config.lojaWebhookSecret);
+  const repo = new RepositorioDePagamentos(db, { notificarLoja });
   const servico = new ServicoDePagamento(db, repo, registro);
   const reconciliacao = new ServicoDeReconciliacao(repo, registro);
   const processador = new ProcessadorDeWebhook(db, repo, registro);
@@ -57,6 +61,7 @@ export function montarApp(deps: Partial<Dependencias> = {}): FastifyInstance {
   void app.register((rotas, _opcoes, done) => {
     registrarRotasPagamentos(rotas, { servico, reconciliacao });
     registrarRotasWebhook(rotas, { processador, limite });
+    registrarRotasNotificacoes(rotas, { db });
     // PIX simulado (BR Code próprio + webhook HMAC de teste): só fora de produção.
     if (segredoPix) {
       registrarRotasPix(rotas, { pix: new ServicoPix(db, repo, segredoPix), limite });
