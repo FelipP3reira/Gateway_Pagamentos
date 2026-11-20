@@ -14,16 +14,23 @@ const CABECALHO_ASSINATURA: Record<Provedor, string> = {
   pix: 'x-assinatura',
 };
 
+// Limite por IP aplicado às rotas públicas de webhook (@fastify/rate-limit).
+export interface LimiteDeTaxa {
+  max: number;
+  timeWindow: string;
+}
+
 function cabecalho(valor: string | string[] | undefined): string | undefined {
   return Array.isArray(valor) ? valor[0] : valor;
 }
 
 export function registrarRotasWebhook(
   app: FastifyInstance,
-  deps: { processador: ProcessadorDeWebhook },
+  deps: { processador: ProcessadorDeWebhook; limite: LimiteDeTaxa },
 ): void {
   app.post<{ Params: { provedor: string } }>(
     '/webhooks/:provedor',
+    { config: { rateLimit: deps.limite } },
     async (requisicao, resposta) => {
       const nome = requisicao.params.provedor;
       if (!PROVEDORES.includes(nome as Provedor)) {

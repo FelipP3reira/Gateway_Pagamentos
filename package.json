@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
-    "dev": "node --experimental-transform-types --disable-warning=ExperimentalWarning --env-file=.env --watch src/principal.ts",
-    "migrar": "node --experimental-transform-types --disable-warning=ExperimentalWarning --env-file=.env src/db/migrar.ts",
+    "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning --env-file=.env --watch src/principal.ts",
+    "migrar": "node --experimental-strip-types --disable-warning=ExperimentalWarning --env-file=.env src/db/migrar.ts",
+    "iniciar": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/db/migrar.ts && exec node --experimental-strip-types --disable-warning=ExperimentalWarning src/principal.ts",
     "tipos": "tsc --noEmit",
     "lint": "eslint .",
     "formatar": "prettier --write .",
@@ -16,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "fastify": "^5.1.0",
     "kysely": "^0.29.4",
     "pg": "^8.13.1",

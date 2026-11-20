@@ -32,7 +32,7 @@ function webhook(txid: string, eventoId: string, status = 'CONCLUIDA') {
   const corpo = JSON.stringify({ id: eventoId, txid, status });
   return {
     payload: corpo,
-    assinatura: assinarHmac(Buffer.from(corpo, 'utf8'), config.fakeWebhookSecret),
+    assinatura: assinarHmac(Buffer.from(corpo, 'utf8'), config.fakeWebhookSecret!),
   };
 }
 
