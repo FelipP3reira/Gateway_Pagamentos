@@ -75,6 +75,7 @@ export class ServicoPix {
   async criarCobranca(nova: NovaCobrancaPix): Promise<CobrancaPix> {
     const { pagamento, nova: primeira } = await this.repo.criarIdempotente({
       provedor: 'pix',
+      metodo: 'pix',
       valorCentavos: nova.valorCentavos,
       moeda: 'BRL',
       tokenMetodo: nova.chave,

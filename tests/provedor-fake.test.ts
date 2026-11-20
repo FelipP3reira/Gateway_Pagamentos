@@ -5,6 +5,7 @@ import type { DadosCobranca } from '../src/provedores/provedor.ts';
 
 function dados(sobrescrever: Partial<DadosCobranca> = {}): DadosCobranca {
   return {
+    metodo: 'cartao',
     valorCentavos: 1990,
     moeda: 'BRL',
     tokenMetodo: 'tok_fake_ok',

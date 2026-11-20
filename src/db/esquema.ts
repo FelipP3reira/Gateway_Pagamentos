@@ -4,7 +4,9 @@ import type { ColumnType, Generated } from 'kysely';
 // quem define quais transições entre eles são válidas.
 export type Estado = 'pendente' | 'autorizado' | 'capturado' | 'estornado' | 'cancelado' | 'falhou';
 
-export type Provedor = 'stripe' | 'fake' | 'pix';
+export type Provedor = 'stripe' | 'fake' | 'pix' | 'mercadopago';
+
+export type MetodoPagamento = 'cartao' | 'pix';
 
 export type TipoChavePix = 'aleatoria' | 'cpf' | 'email' | 'telefone';
 
@@ -28,6 +30,13 @@ export interface TabelaPagamentos {
   metodo_pagamento_id: ColumnType<string | null, string | null | undefined, string | null>;
   // Banco emissor do cartão, quando o provedor exige (issuer_id do Mercado Pago).
   emissor_id: ColumnType<string | null, string | null | undefined, string | null>;
+  metodo: ColumnType<MetodoPagamento, MetodoPagamento | undefined, MetodoPagamento>;
+  // Cobrança Pix vinda do provedor (Mercado Pago). O Pix simulado continua na
+  // tabela cobrancas_pix.
+  pix_copia_e_cola: ColumnType<string | null, string | null | undefined, string | null>;
+  pix_qr_code_base64: ColumnType<string | null, string | null | undefined, string | null>;
+  pix_url_ticket: ColumnType<string | null, string | null | undefined, string | null>;
+  pix_expira_em: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
   criado_em: CriadaEm;
   atualizado_em: ColumnType<Date, Date | string | undefined, Date | string>;
 }

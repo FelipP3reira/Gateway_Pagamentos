@@ -3,31 +3,41 @@ import type { FastifyInstance } from 'fastify';
 import { ErroDeAplicacao } from '../erros.ts';
 import type { ServicoDeReconciliacao } from '../dominio/reconciliacao.ts';
 import type { ServicoDePagamento } from '../dominio/servico-pagamento.ts';
-import type { Pagador, Pagamento } from '../dominio/tipos.ts';
+import type { Metodo, Pagador, Pagamento } from '../dominio/tipos.ts';
 
 // Teto absoluto de parcelas aceito na API. Cada provedor ainda impõe o seu
 // (`parcelasMaximas`), e a regra comercial (juros, parcela mínima) é da loja.
 const PARCELAS_TETO = 24;
 
+// Validade da cobrança Pix: o Mercado Pago aceita de 30 minutos a 30 dias.
+const PIX_MINUTOS_MIN = 30;
+const PIX_MINUTOS_MAX = 30 * 24 * 60;
+const PIX_MINUTOS_PADRAO = 30;
+
 interface CorpoCriar {
-  provedor: 'stripe' | 'fake';
+  provedor: 'stripe' | 'fake' | 'mercadopago';
+  metodo?: Metodo;
   valorCentavos: number;
   moeda: string;
-  tokenMetodo: string;
+  tokenMetodo?: string;
   descricao?: string;
   capturaAutomatica?: boolean;
   parcelas?: number;
   metodoPagamentoId?: string;
   emissorId?: string;
   pagador?: Pagador;
+  pixExpiraEmMinutos?: number;
 }
 
 const schemaCriar = {
   type: 'object',
-  required: ['provedor', 'valorCentavos', 'moeda', 'tokenMetodo'],
+  // tokenMetodo é obrigatório só no cartão — conferido na rota.
+  required: ['provedor', 'valorCentavos', 'moeda'],
   additionalProperties: false,
   properties: {
-    provedor: { type: 'string', enum: ['stripe', 'fake'] },
+    provedor: { type: 'string', enum: ['stripe', 'fake', 'mercadopago'] },
+    metodo: { type: 'string', enum: ['cartao', 'pix'] },
+    pixExpiraEmMinutos: { type: 'integer', minimum: PIX_MINUTOS_MIN, maximum: PIX_MINUTOS_MAX },
     valorCentavos: { type: 'integer', minimum: 1 },
     moeda: { type: 'string', minLength: 3, maxLength: 3 },
     tokenMetodo: { type: 'string', minLength: 1 },
@@ -64,6 +74,9 @@ function apresentar(p: Pagamento) {
     parcelas: p.parcelas,
     metodoPagamentoId: p.metodoPagamentoId,
     emissorId: p.emissorId,
+    metodo: p.metodo,
+    // Copia e cola, QR (PNG base64) e validade da cobrança Pix do provedor.
+    pix: p.pix,
     criadoEm: p.criadoEm,
     atualizadoEm: p.atualizadoEm,
   };
@@ -90,11 +103,21 @@ export function registrarRotasPagamentos(
       }
 
       const corpo = requisicao.body;
+      const metodo = corpo.metodo ?? 'cartao';
+      if (metodo === 'cartao' && !corpo.tokenMetodo) {
+        throw new ErroDeAplicacao(
+          400,
+          'token_obrigatorio',
+          'tokenMetodo é obrigatório no cartão (token gerado pelo SDK do provedor).',
+        );
+      }
       const pagamento = await servico.criar({
         provedor: corpo.provedor,
+        metodo,
         valorCentavos: corpo.valorCentavos,
         moeda: corpo.moeda,
-        tokenMetodo: corpo.tokenMetodo,
+        // No Pix não há token; ignora o que vier.
+        tokenMetodo: metodo === 'cartao' ? corpo.tokenMetodo : undefined,
         descricao: corpo.descricao,
         capturaAutomatica: corpo.capturaAutomatica ?? false,
         chaveIdempotencia: chave,
@@ -102,6 +125,8 @@ export function registrarRotasPagamentos(
         metodoPagamentoId: corpo.metodoPagamentoId,
         emissorId: corpo.emissorId,
         pagador: corpo.pagador,
+        pixExpiraEmMinutos:
+          metodo === 'pix' ? (corpo.pixExpiraEmMinutos ?? PIX_MINUTOS_PADRAO) : undefined,
       });
 
       return resposta.status(201).send(apresentar(pagamento));

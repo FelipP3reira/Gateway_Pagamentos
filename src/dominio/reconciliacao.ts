@@ -1,6 +1,5 @@
 import { ErroDeAplicacao } from '../erros.ts';
 import type { RegistroDeProvedores } from '../provedores/registro.ts';
-import { podeTransicionar } from './maquina-estados.ts';
 import type { RepositorioDePagamentos } from './repositorio.ts';
 import type { Pagamento } from './tipos.ts';
 
@@ -41,18 +40,15 @@ export class ServicoDeReconciliacao {
       return { pagamento, ajustado: false };
     }
 
-    // Só corrige quando o provedor está à frente por um caminho válido. Uma
+    // Só corrige quando o provedor está à frente por um caminho válido (pode
+    // ser mais de um passo: Pix pago sai de pendente e chega a capturado). Uma
     // divergência que a máquina de estados não aceita é inconsistência real e
     // não é "consertada" às escondidas — fica visível para investigação.
-    if (!podeTransicionar(pagamento.estado, estadoNoProvedor)) {
-      return { pagamento, ajustado: false };
-    }
-
-    const atualizado = await this.repo.transicionar(
+    const { pagamento: atualizado, mudou } = await this.repo.avancar(
       id,
       estadoNoProvedor,
       `reconciliação com o provedor (${estadoNoProvedor})`,
     );
-    return { pagamento: atualizado, ajustado: true };
+    return { pagamento: atualizado, ajustado: mudou };
   }
 }
