@@ -2,8 +2,8 @@ import type { Kysely, Selectable } from 'kysely';
 
 import type { BancoDeDados, Estado, Provedor, TabelaPagamentos } from '../db/esquema.ts';
 import { ErroDeAplicacao } from '../erros.ts';
-import { garantirTransicao } from './maquina-estados.ts';
-import type { NovaCobranca, Pagamento } from './tipos.ts';
+import { caminhoAte, garantirTransicao } from './maquina-estados.ts';
+import type { DadosPix, NovaCobranca, Pagamento } from './tipos.ts';
 
 function mapear(linha: Selectable<TabelaPagamentos>): Pagamento {
   return {
@@ -17,6 +17,15 @@ function mapear(linha: Selectable<TabelaPagamentos>): Pagamento {
     parcelas: linha.parcelas,
     metodoPagamentoId: linha.metodo_pagamento_id,
     emissorId: linha.emissor_id,
+    metodo: linha.metodo,
+    pix: linha.pix_copia_e_cola
+      ? {
+          copiaECola: linha.pix_copia_e_cola,
+          qrCodeBase64: linha.pix_qr_code_base64,
+          urlTicket: linha.pix_url_ticket,
+          expiraEm: linha.pix_expira_em,
+        }
+      : null,
     criadoEm: linha.criado_em,
     atualizadoEm: linha.atualizado_em,
   };
@@ -49,6 +58,7 @@ export class RepositorioDePagamentos {
           parcelas: nova.parcelas ?? 1,
           metodo_pagamento_id: nova.metodoPagamentoId ?? null,
           emissor_id: nova.emissorId ?? null,
+          metodo: nova.metodo ?? 'cartao',
         })
         .onConflict((oc) => oc.column('chave_idempotencia').doNothing())
         .returningAll()
@@ -89,6 +99,21 @@ export class RepositorioDePagamentos {
     await this.db
       .updateTable('pagamentos')
       .set({ referencia_externa: referencia, atualizado_em: new Date() })
+      .where('id', '=', id)
+      .execute();
+  }
+
+  // Guarda a cobrança Pix que o provedor devolveu (QR, copia e cola, validade).
+  async guardarDadosPix(id: number, pix: DadosPix): Promise<void> {
+    await this.db
+      .updateTable('pagamentos')
+      .set({
+        pix_copia_e_cola: pix.copiaECola,
+        pix_qr_code_base64: pix.qrCodeBase64,
+        pix_url_ticket: pix.urlTicket,
+        pix_expira_em: pix.expiraEm,
+        atualizado_em: new Date(),
+      })
       .where('id', '=', id)
       .execute();
   }
@@ -143,6 +168,52 @@ export class RepositorioDePagamentos {
         .execute();
 
       return { ...mapear(atual), estado: para };
+    });
+  }
+
+  /**
+   * Avança o pagamento até `alvo` pelo menor caminho válido, numa transação só
+   * e com a linha travada: o caminho é calculado a partir do estado travado,
+   * então dois eventos concorrentes serializam em vez de colidir. Cada passo vira
+   * uma linha de auditoria. Sem caminho (ou já no alvo), nada muda.
+   */
+  async avancar(
+    id: number,
+    alvo: Estado,
+    motivo: string,
+  ): Promise<{ pagamento: Pagamento; mudou: boolean }> {
+    return this.db.transaction().execute(async (tx) => {
+      const atual = await tx
+        .selectFrom('pagamentos')
+        .selectAll()
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+
+      if (!atual) {
+        throw new ErroDeAplicacao(404, 'nao_encontrado', 'Pagamento não encontrado.');
+      }
+
+      const caminho = caminhoAte(atual.estado, alvo);
+      if (!caminho || caminho.length === 0) {
+        return { pagamento: mapear(atual), mudou: false };
+      }
+
+      let de = atual.estado;
+      for (const para of caminho) {
+        await tx
+          .insertInto('transicoes')
+          .values({ pagamento_id: id, de_estado: de, para_estado: para, motivo })
+          .execute();
+        de = para;
+      }
+      await tx
+        .updateTable('pagamentos')
+        .set({ estado: alvo, atualizado_em: new Date() })
+        .where('id', '=', id)
+        .execute();
+
+      return { pagamento: { ...mapear(atual), estado: alvo }, mudou: true };
     });
   }
 }

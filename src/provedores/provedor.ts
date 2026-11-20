@@ -1,8 +1,30 @@
 import type { Estado, Provedor } from '../db/esquema.ts';
 
-// Os estados que um provedor pode reportar — o domínio inteiro menos `pendente`,
-// que só existe do nosso lado antes de falar com o provedor.
-export type EstadoProvedor = Exclude<Estado, 'pendente'>;
+// Os estados que um provedor pode reportar. Inclui `pendente`: o Pix fica
+// aguardando a transferência e o cartão pode ficar em análise (in_process) —
+// nesses casos o pagamento continua pendente até o webhook ou a reconciliação.
+export type EstadoProvedor = Estado;
+
+// Forma de pagamento. Cartão exige token do provedor; Pix não.
+export type Metodo = 'cartao' | 'pix';
+
+// Dados da cobrança Pix devolvidos pelo provedor, para a loja exibir.
+export interface DadosPix {
+  // "Copia e cola" (BR Code).
+  copiaECola: string;
+  // Imagem do QR em PNG base64 (sem o prefixo data:).
+  qrCodeBase64: string | null;
+  // Página do provedor com QR e instruções, quando houver.
+  urlTicket: string | null;
+  expiraEm: Date | null;
+}
+
+// Cabeçalhos e query da requisição do webhook, para provedores que assinam mais
+// do que o corpo (o Mercado Pago assina data.id da query e o x-request-id).
+export interface ContextoWebhook {
+  cabecalhos: Record<string, string | undefined>;
+  query: Record<string, string | undefined>;
+}
 
 // Quem paga, no formato que os provedores brasileiros pedem (o Mercado Pago exige
 // e-mail e documento). Só trafega até o provedor; o gateway não persiste.
@@ -15,9 +37,11 @@ export interface Pagador {
 // Dados de uma cobrança do ponto de vista do provedor. O token é do método de
 // pagamento (tokenização do provedor); o PAN nunca chega aqui.
 export interface DadosCobranca {
+  metodo: Metodo;
   valorCentavos: number;
   moeda: string;
-  tokenMetodo: string;
+  // Obrigatório no cartão (a rota garante); ausente no Pix.
+  tokenMetodo?: string;
   descricao?: string;
   capturaAutomatica: boolean;
   // Repassada ao provedor para a operação ser idempotente do lado dele também.
@@ -27,12 +51,16 @@ export interface DadosCobranca {
   metodoPagamentoId?: string;
   emissorId?: string;
   pagador?: Pagador;
+  // Validade da cobrança Pix, em minutos a partir de agora.
+  pixExpiraEmMinutos?: number;
 }
 
 export interface ResultadoProvedor {
   // Id do pagamento no provedor (payment intent / charge).
   referenciaExterna: string;
   estado: EstadoProvedor;
+  // Presente nas cobranças Pix.
+  pix?: DadosPix;
 }
 
 // Evento de webhook já normalizado e com a assinatura verificada.
@@ -44,6 +72,9 @@ export interface EventoWebhook {
   referenciaExterna: string | null;
   // Estado que o evento implica, ou null se não muda estado.
   estado: EstadoProvedor | null;
+  // true quando o evento só avisa "mudou" e o estado precisa ser consultado no
+  // provedor (é o caso do Mercado Pago: a notificação traz só o id).
+  exigeConsulta?: boolean;
 }
 
 /**
@@ -59,6 +90,13 @@ export interface ProvedorDePagamento {
   // Maior número de parcelas que o adaptador sabe cobrar. O serviço recusa acima
   // disso antes de gravar o pagamento. 1 = só à vista.
   readonly parcelasMaximas: number;
+  // Formas de pagamento que o adaptador cobra.
+  readonly metodos: readonly Metodo[];
+  /**
+   * Regras próprias do provedor (ex.: e-mail do pagador obrigatório), checadas
+   * ANTES de gravar o pagamento. Lança ErroDeAplicacao 400 se faltar algo.
+   */
+  validarCobranca?(dados: DadosCobranca): void;
   autorizar(dados: DadosCobranca): Promise<ResultadoProvedor>;
   capturar(referenciaExterna: string): Promise<ResultadoProvedor>;
   estornar(
@@ -68,5 +106,9 @@ export interface ProvedorDePagamento {
   cancelar(referenciaExterna: string): Promise<void>;
   // Estado atual no provedor — a fonte da verdade para a reconciliação.
   consultar(referenciaExterna: string): Promise<EstadoProvedor>;
-  verificarWebhook(corpoCru: Buffer, assinatura: string | undefined): EventoWebhook;
+  verificarWebhook(
+    corpoCru: Buffer,
+    assinatura: string | undefined,
+    contexto?: ContextoWebhook,
+  ): EventoWebhook;
 }

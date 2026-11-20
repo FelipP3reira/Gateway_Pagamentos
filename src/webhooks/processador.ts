@@ -1,7 +1,8 @@
 import type { Kysely } from 'kysely';
 
-import type { BancoDeDados, Provedor } from '../db/esquema.ts';
-import { podeTransicionar } from '../dominio/maquina-estados.ts';
+import type { BancoDeDados, Estado, Provedor } from '../db/esquema.ts';
+import { ErroDeAplicacao } from '../erros.ts';
+import type { ContextoWebhook } from '../provedores/provedor.ts';
 import type { RepositorioDePagamentos } from '../dominio/repositorio.ts';
 import type { RegistroDeProvedores } from '../provedores/registro.ts';
 
@@ -33,15 +34,39 @@ export class ProcessadorDeWebhook {
    * — retorna no-op. É isso que impede o webhook duplicado de capturar duas
    * vezes, mesmo com dois webhooks chegando ao mesmo tempo. A máquina de estados
    * é a segunda trava: um evento fora de ordem não força transição inválida.
+   *
+   * Quando o evento só avisa "mudou" (`exigeConsulta`, caso do Mercado Pago), o
+   * estado é consultado no provedor ANTES do claim: se a consulta falhar, o
+   * webhook responde erro e o provedor reenvia — o evento não fica marcado como
+   * tratado sem ter tido efeito.
    */
   async processar(
     nomeProvedor: Provedor,
     corpoCru: Buffer,
     assinatura: string | undefined,
+    contexto?: ContextoWebhook,
   ): Promise<ResultadoWebhook> {
     const provedor = this.registro.obter(nomeProvedor);
     // Lança AssinaturaInvalida (401) se a assinatura não bater — nada roda.
-    const evento = provedor.verificarWebhook(corpoCru, assinatura);
+    const evento = provedor.verificarWebhook(corpoCru, assinatura, contexto);
+
+    const pagamento = evento.referenciaExterna
+      ? await this.repo.buscarPorReferencia(nomeProvedor, evento.referenciaExterna)
+      : null;
+
+    let estado: Estado | null = evento.estado;
+    // Só consulta pagamentos nossos: evento de cobrança alheia não gera chamada.
+    if (evento.exigeConsulta && pagamento && evento.referenciaExterna) {
+      try {
+        estado = await provedor.consultar(evento.referenciaExterna);
+      } catch {
+        throw new ErroDeAplicacao(
+          502,
+          'provedor_falhou',
+          'Não foi possível consultar o provedor; reenvie o evento.',
+        );
+      }
+    }
 
     const reivindicado = await this.db
       .insertInto('webhook_eventos')
@@ -49,7 +74,7 @@ export class ProcessadorDeWebhook {
         provedor: nomeProvedor,
         evento_id: evento.id,
         tipo: evento.tipo,
-        pagamento_id: null,
+        pagamento_id: pagamento?.id ?? null,
       })
       .onConflict((oc) => oc.columns(['provedor', 'evento_id']).doNothing())
       .returning('id')
@@ -60,21 +85,11 @@ export class ProcessadorDeWebhook {
       return { processado: false };
     }
 
-    if (evento.estado && evento.referenciaExterna) {
-      const pagamento = await this.repo.buscarPorReferencia(nomeProvedor, evento.referenciaExterna);
-      if (pagamento) {
-        await this.db
-          .updateTable('webhook_eventos')
-          .set({ pagamento_id: pagamento.id })
-          .where('id', '=', reivindicado.id)
-          .execute();
-
-        // Só transiciona se for válido; um evento repetido de outro id que
-        // reafirma o mesmo estado vira no-op em vez de erro.
-        if (podeTransicionar(pagamento.estado, evento.estado)) {
-          await this.repo.transicionar(pagamento.id, evento.estado, `webhook ${evento.tipo}`);
-        }
-      }
+    if (estado && pagamento) {
+      // Avança pelo caminho válido (Pix pago: pendente → autorizado → capturado).
+      // Um evento que reafirma o estado atual, ou que a máquina não aceita, vira
+      // no-op em vez de erro.
+      await this.repo.avancar(pagamento.id, estado, `webhook ${evento.tipo}`);
     }
 
     return { processado: true };

@@ -1,7 +1,8 @@
 import type { Kysely } from 'kysely';
 
 import type { BancoDeDados } from '../db/esquema.ts';
-import { ErroDeAplicacao } from '../erros.ts';
+import { ErroDeAplicacao, RecusaDoProvedor } from '../erros.ts';
+import type { DadosCobranca } from '../provedores/provedor.ts';
 import type { RegistroDeProvedores } from '../provedores/registro.ts';
 import { garantirTransicao } from './maquina-estados.ts';
 import type { RepositorioDePagamentos } from './repositorio.ts';
@@ -32,7 +33,18 @@ export class ServicoDePagamento {
     // Provedor indisponível é barrado antes de gravar: senão sobraria um
     // pagamento `pendente` órfão que nunca falou com provedor nenhum.
     const provedor = this.registro.obter(nova.provedor);
+    const metodo = nova.metodo ?? 'cartao';
+    if (!provedor.metodos.includes(metodo)) {
+      throw new ErroDeAplicacao(
+        400,
+        'metodo_indisponivel',
+        `O provedor "${provedor.nome}" não cobra por ${metodo}.`,
+      );
+    }
     const parcelas = nova.parcelas ?? 1;
+    if (metodo === 'pix' && parcelas !== 1) {
+      throw new ErroDeAplicacao(400, 'parcelas_invalidas', 'Pix é sempre à vista (1 parcela).');
+    }
     if (parcelas > provedor.parcelasMaximas) {
       throw new ErroDeAplicacao(
         400,
@@ -41,35 +53,59 @@ export class ServicoDePagamento {
       );
     }
 
-    const { pagamento, nova: primeira } = await this.repo.criarIdempotente(nova);
+    const dados: DadosCobranca = {
+      metodo,
+      valorCentavos: nova.valorCentavos,
+      moeda: nova.moeda,
+      tokenMetodo: nova.tokenMetodo,
+      descricao: nova.descricao,
+      capturaAutomatica: nova.capturaAutomatica,
+      chaveIdempotencia: nova.chaveIdempotencia,
+      parcelas,
+      metodoPagamentoId: nova.metodoPagamentoId,
+      emissorId: nova.emissorId,
+      pagador: nova.pagador,
+      pixExpiraEmMinutos: nova.pixExpiraEmMinutos,
+    };
+    // Regras do próprio provedor, também antes de gravar.
+    provedor.validarCobranca?.(dados);
+
+    const { pagamento, nova: primeira } = await this.repo.criarIdempotente({ ...nova, metodo });
     if (!primeira) {
       return pagamento;
     }
 
     let resultado;
     try {
-      resultado = await provedor.autorizar({
-        valorCentavos: nova.valorCentavos,
-        moeda: nova.moeda,
-        tokenMetodo: nova.tokenMetodo,
-        descricao: nova.descricao,
-        capturaAutomatica: nova.capturaAutomatica,
-        chaveIdempotencia: nova.chaveIdempotencia,
-        parcelas,
-        metodoPagamentoId: nova.metodoPagamentoId,
-        emissorId: nova.emissorId,
-        pagador: nova.pagador,
-      });
-    } catch {
+      resultado = await provedor.autorizar(dados);
+    } catch (erro) {
+      // Recusa definitiva (4xx de validação): a cobrança não existe no provedor,
+      // então o desfecho é conhecido — falhou.
+      if (erro instanceof RecusaDoProvedor) {
+        return this.repo.transicionar(
+          pagamento.id,
+          'falhou',
+          `recusado pelo provedor (${erro.codigo})`,
+        );
+      }
       // O provedor falhou de forma inesperada (rede, etc.). Deixa o pagamento em
       // `pendente`: a reconciliação decide o desfecho, sem marcar falso negativo.
       throw new ErroDeAplicacao(502, 'provedor_falhou', 'O provedor não respondeu à autorização.');
     }
 
     await this.repo.guardarReferenciaExterna(pagamento.id, resultado.referenciaExterna);
+    if (resultado.pix) {
+      await this.repo.guardarDadosPix(pagamento.id, resultado.pix);
+    }
 
     if (resultado.estado === 'falhou') {
       return this.repo.transicionar(pagamento.id, 'falhou', 'autorização recusada');
+    }
+
+    // Pix aguardando transferência ou cartão em análise: segue pendente até o
+    // webhook (ou a reconciliação) trazer o desfecho.
+    if (resultado.estado === 'pendente') {
+      return (await this.repo.buscar(pagamento.id))!;
     }
 
     // Sempre passa por autorizado; a captura automática dá o segundo passo.

@@ -61,4 +61,20 @@ describe('config', () => {
       /PORTA/,
     );
   });
+
+  it('Mercado Pago: token sem segredo do webhook falha no boot', () => {
+    expect(() =>
+      carregarConfig({ ...BASE, FAKE_WEBHOOK_SECRET: 's', MERCADOPAGO_ACCESS_TOKEN: 'TEST-x' }),
+    ).toThrow(/MERCADOPAGO_WEBHOOK_SECRET/);
+  });
+
+  it('Mercado Pago: URL de notificação precisa ser HTTPS', () => {
+    expect(() =>
+      carregarConfig({
+        ...BASE,
+        FAKE_WEBHOOK_SECRET: 's',
+        MERCADOPAGO_URL_NOTIFICACAO: 'http://gateway.exemplo.com/webhooks/mercadopago',
+      }),
+    ).toThrow(/https/);
+  });
 });

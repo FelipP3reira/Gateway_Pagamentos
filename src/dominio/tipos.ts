@@ -1,16 +1,18 @@
 import type { Estado, Provedor } from '../db/esquema.ts';
-import type { Pagador } from '../provedores/provedor.ts';
+import type { DadosPix, Metodo, Pagador } from '../provedores/provedor.ts';
 
-export type { Estado, Pagador, Provedor };
+export type { DadosPix, Estado, Metodo, Pagador, Provedor };
 
 // Dados para criar uma cobrança, no nível do domínio — sem detalhe de provedor.
 export interface NovaCobranca {
   provedor: Provedor;
+  // Ausente = cartão.
+  metodo?: Metodo;
   valorCentavos: number;
   moeda: string;
   // Token do método de pagamento no provedor (ex.: pm_card_visa da Stripe).
   // NUNCA o número do cartão (PAN): a tokenização é do provedor.
-  tokenMetodo: string;
+  tokenMetodo?: string;
   descricao?: string;
   // true captura na hora (autoriza + captura); false só autoriza.
   capturaAutomatica: boolean;
@@ -23,6 +25,7 @@ export interface NovaCobranca {
   // Repassado ao provedor e NÃO persistido aqui (o gateway não guarda dado
   // pessoal que não precisa — LGPD). A loja é a dona do cadastro.
   pagador?: Pagador;
+  pixExpiraEmMinutos?: number;
 }
 
 export interface Pagamento {
@@ -36,6 +39,9 @@ export interface Pagamento {
   parcelas: number;
   metodoPagamentoId: string | null;
   emissorId: string | null;
+  metodo: Metodo;
+  // Só nas cobranças Pix de provedor real.
+  pix: DadosPix | null;
   criadoEm: Date;
   atualizadoEm: Date;
 }
