@@ -71,7 +71,16 @@ assinatura do provedor e por limite de taxa por IP). Sem a chave: `401`.
 
 O corpo de `POST /pagamentos` recebe `provedor`, `valorCentavos` (inteiro),
 `moeda`, `tokenMetodo` (o **token do provedor**, nunca o cartão) e
-`capturaAutomatica`.
+`capturaAutomatica`. Opcionais:
+
+- `parcelas`: inteiro de 1 a 24 (padrão 1). Cada provedor tem o seu máximo
+  (`fake`: 12, `stripe`: 1); acima dele, `400 parcelas_invalidas` sem gravar nada.
+- `metodoPagamentoId` e `emissorId`: método e banco emissor no provedor (ex.:
+  `visa` e `issuer_id` do Mercado Pago).
+- `pagador`: `{ email, tipoDocumento?: "CPF" | "CNPJ", documento? }`, com o
+  documento só em dígitos. Vai para o provedor e **não é persistido**.
+
+A resposta traz `parcelas`, `metodoPagamentoId` e `emissorId`.
 
 `POST /pix/cobrancas` (com `Idempotency-Key`) recebe `chave` e `valorCentavos` e
 devolve o **copia-e-cola** e o **QR** (SVG + PNG data URI). O pagamento nasce
@@ -156,3 +165,4 @@ verdade exigiria, além do que está aqui:
 - [x] Reconciliação e README final
 - [x] PIX (sandbox): chave, cobrança com BR Code + QR e confirmação por webhook
 - [x] Chave da API entre serviços, Dockerfile, health check com banco, rate limit nos webhooks
+- [x] Parcelas, método e emissor no pagamento; pagador repassado ao provedor

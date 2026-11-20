@@ -46,3 +46,27 @@ que precise de transformação. A imagem usa Node 24 (LTS ativa).
 **Provedor indisponível é barrado antes de gravar.** Antes, `POST /pagamentos`
 com um provedor não registrado gravava o pagamento `pendente` e só então
 respondia 400, deixando uma linha órfã. Agora o provedor é resolvido primeiro.
+
+## G3 — Parcelas
+
+**Teto na API, máximo por provedor, regra comercial na loja.** A API aceita de 1
+a 24 parcelas; cada adaptador declara `parcelasMaximas` (fake 12, Stripe 1, já
+que o adaptador de teste não implementa parcelamento). Juros, parcela mínima e
+"sem juros até N" são regra comercial e ficam na loja; o gateway só garante que
+o provedor consegue cobrar.
+
+**Validação antes de gravar.** Como no provedor indisponível, parcelas acima do
+máximo do provedor viram `400 parcelas_invalidas` sem criar pagamento.
+
+**Pagador não é persistido.** O Mercado Pago exige e-mail e documento do
+pagador. O gateway repassa ao provedor e não guarda: a loja é a dona do
+cadastro, e dado pessoal que o gateway não usa é só risco (LGPD).
+
+**Campos extras são descartados, não rejeitados.** É o padrão do Fastify
+(`removeAdditional`) e já valia antes. O que não está no schema some antes da
+rota, então nada fora do contrato chega ao provedor ou ao banco.
+
+**Campos opcionais no domínio.** `parcelas` (padrão 1), `metodoPagamentoId`,
+`emissorId` e `pagador` são opcionais em `NovaCobranca`, para não quebrar quem
+já cria pagamentos (PIX simulado, testes). A migração usa `ADD COLUMN IF NOT
+EXISTS` com padrão 1, então os pagamentos antigos ficam como à vista.
