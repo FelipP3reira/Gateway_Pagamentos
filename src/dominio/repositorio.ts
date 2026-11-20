@@ -20,7 +20,11 @@ function mapear(linha: Selectable<TabelaPagamentos>): Pagamento {
 }
 
 export class RepositorioDePagamentos {
-  constructor(private readonly db: Kysely<BancoDeDados>) {}
+  private readonly db: Kysely<BancoDeDados>;
+
+  constructor(db: Kysely<BancoDeDados>) {
+    this.db = db;
+  }
 
   /**
    * Cria o pagamento em `pendente` de forma idempotente: a mesma
