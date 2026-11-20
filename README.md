@@ -1,13 +1,15 @@
 # Gateway de Pagamentos
 
-Camada de gateway que abstrai provedores de pagamento (**Stripe** e um **provider
-fake** próprio) atrás de uma interface comum, com máquina de estados, webhooks
-com assinatura verificada e idempotência à prova de cobrança dupla.
+Camada de gateway que abstrai provedores de pagamento (**Mercado Pago**,
+**Stripe** e um **provider fake** próprio) atrás de uma interface comum, com
+máquina de estados, webhooks com assinatura verificada e idempotência à prova de
+cobrança dupla.
 
-> ⚠️ **Sandbox — sem dinheiro real.** Este projeto roda apenas em modo de teste
-> (Stripe test mode + provider fake). Não processa pagamentos reais e **não é**,
-> por si só, um sistema PCI-compliant de produção. Veja
-> [Escopo e PCI](#escopo-o-que-fica-de-fora) no fim.
+> ⚠️ **Credenciais decidem o ambiente.** Com as credenciais de **teste** do
+> Mercado Pago (e o fake/Stripe test mode), nada envolve dinheiro real. Com as de
+> produção, o Mercado Pago cobra de verdade. O gateway não recebe número de
+> cartão (só o token do provedor) e **não é**, por si só, um sistema
+> PCI-compliant. Veja [Escopo e PCI](#escopo-o-que-fica-de-fora) no fim.
 
 ## Stack
 
@@ -80,7 +82,44 @@ O corpo de `POST /pagamentos` recebe `provedor`, `valorCentavos` (inteiro),
 - `pagador`: `{ email, tipoDocumento?: "CPF" | "CNPJ", documento? }`, com o
   documento só em dígitos. Vai para o provedor e **não é persistido**.
 
-A resposta traz `parcelas`, `metodoPagamentoId` e `emissorId`.
+A resposta traz `parcelas`, `metodoPagamentoId`, `emissorId`, `metodo` e `pix`.
+
+### Pix e cartão pelo Mercado Pago
+
+`metodo` é `"cartao"` (padrão) ou `"pix"`. No cartão, `tokenMetodo` é
+obrigatório. No Pix não há token, e `pixExpiraEmMinutos` (30 a 43200, padrão 30)
+define a validade. O Mercado Pago exige `pagador.email` nos dois métodos e
+`metodoPagamentoId` (bandeira, devolvida pelo Bricks) no cartão; faltou, `400`
+sem gravar nada.
+
+```jsonc
+// POST /pagamentos — Pix
+{ "provedor": "mercadopago", "metodo": "pix", "valorCentavos": 15990,
+  "moeda": "BRL", "pagador": { "email": "cliente@exemplo.com" } }
+
+// 201 — pendente até o webhook
+{ "estado": "pendente", "metodo": "pix",
+  "pix": { "copiaECola": "000201...", "qrCodeBase64": "iVBOR...",
+           "urlTicket": "https://...", "expiraEm": "2026-..." } }
+```
+
+Estados: aprovado vira `capturado` (passando por `autorizado` no log),
+`authorized` vira `autorizado`, `pending`/`in_process` ficam `pendente`,
+`rejected` vira `falhou`, `cancelled` (inclusive Pix expirado) vira `cancelado`,
+`refunded`/`charged_back` vira `estornado`. Uma recusa definitiva da API (4xx de
+validação) marca o pagamento como `falhou`; falha de rede ou 5xx responde `502` e
+deixa `pendente` para a reconciliação.
+
+**Webhook.** Configure no painel do Mercado Pago (Suas integrações → Webhooks,
+evento "Pagamentos") a URL `https://<gateway>/webhooks/mercadopago` e copie a
+assinatura secreta para `MERCADOPAGO_WEBHOOK_SECRET`. O gateway valida o
+`x-signature` (HMAC-SHA256 de `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`,
+janela de 300 s contra replay), consulta o pagamento na API e só então aplica a
+mudança. Se a consulta falhar, responde `502` e o Mercado Pago reenvia.
+
+O provider `fake` também aceita `metodo: "pix"` (QR e copia e cola válidos de uma
+chave de teste), liquidado por um webhook do fake com `estado: "capturado"`:
+serve para a loja testar o fluxo de ponta a ponta sem provedor.
 
 `POST /pix/cobrancas` (com `Idempotency-Key`) recebe `chave` e `valorCentavos` e
 devolve o **copia-e-cola** e o **QR** (SVG + PNG data URI). O pagamento nasce
@@ -166,3 +205,4 @@ verdade exigiria, além do que está aqui:
 - [x] PIX (sandbox): chave, cobrança com BR Code + QR e confirmação por webhook
 - [x] Chave da API entre serviços, Dockerfile, health check com banco, rate limit nos webhooks
 - [x] Parcelas, método e emissor no pagamento; pagador repassado ao provedor
+- [x] Adaptador Mercado Pago: cartão parcelado, Pix real, webhook com assinatura oficial
