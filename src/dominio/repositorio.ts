@@ -14,6 +14,9 @@ function mapear(linha: Selectable<TabelaPagamentos>): Pagamento {
     valorCentavos: linha.valor_centavos,
     moeda: linha.moeda,
     descricao: linha.descricao,
+    parcelas: linha.parcelas,
+    metodoPagamentoId: linha.metodo_pagamento_id,
+    emissorId: linha.emissor_id,
     criadoEm: linha.criado_em,
     atualizadoEm: linha.atualizado_em,
   };
@@ -43,6 +46,9 @@ export class RepositorioDePagamentos {
           moeda: nova.moeda,
           chave_idempotencia: nova.chaveIdempotencia,
           descricao: nova.descricao ?? null,
+          parcelas: nova.parcelas ?? 1,
+          metodo_pagamento_id: nova.metodoPagamentoId ?? null,
+          emissor_id: nova.emissorId ?? null,
         })
         .onConflict((oc) => oc.column('chave_idempotencia').doNothing())
         .returningAll()

@@ -4,6 +4,14 @@ import type { Estado, Provedor } from '../db/esquema.ts';
 // que só existe do nosso lado antes de falar com o provedor.
 export type EstadoProvedor = Exclude<Estado, 'pendente'>;
 
+// Quem paga, no formato que os provedores brasileiros pedem (o Mercado Pago exige
+// e-mail e documento). Só trafega até o provedor; o gateway não persiste.
+export interface Pagador {
+  email: string;
+  tipoDocumento?: 'CPF' | 'CNPJ';
+  documento?: string;
+}
+
 // Dados de uma cobrança do ponto de vista do provedor. O token é do método de
 // pagamento (tokenização do provedor); o PAN nunca chega aqui.
 export interface DadosCobranca {
@@ -14,6 +22,11 @@ export interface DadosCobranca {
   capturaAutomatica: boolean;
   // Repassada ao provedor para a operação ser idempotente do lado dele também.
   chaveIdempotencia: string;
+  // Parcelas do cartão (1 = à vista). Já validado contra `parcelasMaximas`.
+  parcelas: number;
+  metodoPagamentoId?: string;
+  emissorId?: string;
+  pagador?: Pagador;
 }
 
 export interface ResultadoProvedor {
@@ -43,6 +56,9 @@ export interface EventoWebhook {
  */
 export interface ProvedorDePagamento {
   readonly nome: Provedor;
+  // Maior número de parcelas que o adaptador sabe cobrar. O serviço recusa acima
+  // disso antes de gravar o pagamento. 1 = só à vista.
+  readonly parcelasMaximas: number;
   autorizar(dados: DadosCobranca): Promise<ResultadoProvedor>;
   capturar(referenciaExterna: string): Promise<ResultadoProvedor>;
   estornar(

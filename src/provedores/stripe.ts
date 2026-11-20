@@ -34,6 +34,8 @@ export interface ClienteStripe {
 
 export class AdaptadorStripe implements ProvedorDePagamento {
   readonly nome = 'stripe' as const;
+  // O adaptador Stripe é só de teste e não implementa parcelamento.
+  readonly parcelasMaximas = 1;
 
   private readonly stripe: ClienteStripe;
   private readonly segredoWebhook: string;
