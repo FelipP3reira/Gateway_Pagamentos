@@ -34,12 +34,18 @@ export class RegistroDeProvedores {
 }
 
 /**
- * Monta o registro a partir da config: o provider fake sempre entra; a Stripe
+ * Monta o registro a partir da config: o provider fake entra fora de produção; a Stripe
  * só quando as duas chaves existem — sem elas o adaptador fica de fora e o site
  * funciona no modo fake.
  */
 export function montarRegistro(): RegistroDeProvedores {
-  const registro = new RegistroDeProvedores().registrar(new ProvedorFake());
+  const registro = new RegistroDeProvedores();
+
+  // O fake assina webhooks com um segredo de desenvolvimento: em produção seria
+  // um jeito de forjar pagamento aprovado. Por isso fica de fora lá.
+  if (!config.producao) {
+    registro.registrar(new ProvedorFake());
+  }
 
   if (config.stripeSecretKey && config.stripeWebhookSecret) {
     const stripe = new Stripe(config.stripeSecretKey);

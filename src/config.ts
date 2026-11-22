@@ -1,29 +1,88 @@
 // Config validada no import: falta de variável essencial derruba o processo no
 // boot, não na primeira requisição. Errar cedo é mais barato.
+//
+// `carregarConfig` é pura (recebe o env) para os testes exercitarem as regras de
+// produção sem mexer no process.env do processo.
 
-function obrigatoria(nome: string): string {
-  const valor = process.env[nome];
+export type Ambiente = 'desenvolvimento' | 'teste' | 'producao';
+
+type Env = Record<string, string | undefined>;
+
+const AMBIENTES: readonly Ambiente[] = ['desenvolvimento', 'teste', 'producao'];
+
+function obrigatoria(env: Env, nome: string): string {
+  const valor = env[nome];
   if (!valor) {
     throw new Error(`Variável de ambiente ausente: ${nome}`);
   }
   return valor;
 }
 
-function opcional(nome: string): string | undefined {
-  const valor = process.env[nome];
+function opcional(env: Env, nome: string): string | undefined {
+  const valor = env[nome];
   return valor && valor.length > 0 ? valor : undefined;
 }
 
-export const config = {
-  ambiente: process.env.AMBIENTE ?? 'desenvolvimento',
-  porta: Number(process.env.PORTA ?? 3011),
-  databaseUrl: obrigatoria('DATABASE_URL'),
-  // Segredo do provider fake (HMAC dos webhooks). Obrigatório: sem ele não há
-  // como verificar assinatura, e webhook sem verificação é porta aberta.
-  fakeWebhookSecret: obrigatoria('FAKE_WEBHOOK_SECRET'),
-  // Stripe é opcional: sem as chaves, o adaptador fica desligado.
-  stripeSecretKey: opcional('STRIPE_SECRET_KEY'),
-  stripeWebhookSecret: opcional('STRIPE_WEBHOOK_SECRET'),
-} as const;
+function inteiro(env: Env, nome: string, padrao: number): number {
+  const valor = opcional(env, nome);
+  if (valor === undefined) {
+    return padrao;
+  }
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero <= 0) {
+    throw new Error(`Variável de ambiente inválida: ${nome} deve ser inteiro positivo.`);
+  }
+  return numero;
+}
 
-export type Config = typeof config;
+// Chave mínima para a API entre serviços. 32 caracteres aleatórios já dão folga.
+const TAMANHO_MINIMO_CHAVE = 32;
+
+export function carregarConfig(env: Env = process.env) {
+  const ambienteBruto = env.AMBIENTE ?? 'desenvolvimento';
+  if (!AMBIENTES.includes(ambienteBruto as Ambiente)) {
+    throw new Error(`AMBIENTE inválido: "${ambienteBruto}". Use ${AMBIENTES.join(', ')}.`);
+  }
+  const ambiente = ambienteBruto as Ambiente;
+  const producao = ambiente === 'producao';
+
+  // Chaves da API entre serviços. A anterior existe só para a rotação: durante a
+  // troca as duas valem, depois a anterior é removida.
+  const chavesApi = [
+    opcional(env, 'GATEWAY_API_KEY'),
+    opcional(env, 'GATEWAY_API_KEY_ANTERIOR'),
+  ].filter((chave): chave is string => chave !== undefined);
+
+  if (producao && !opcional(env, 'GATEWAY_API_KEY')) {
+    throw new Error('Variável de ambiente ausente: GATEWAY_API_KEY (obrigatória em produção).');
+  }
+  if (producao && chavesApi.some((chave) => chave.length < TAMANHO_MINIMO_CHAVE)) {
+    throw new Error(
+      `GATEWAY_API_KEY fraca: use ao menos ${TAMANHO_MINIMO_CHAVE} caracteres em produção.`,
+    );
+  }
+
+  return {
+    ambiente,
+    producao,
+    porta: inteiro(env, 'PORTA', 3011),
+    databaseUrl: obrigatoria(env, 'DATABASE_URL'),
+    chavesApi,
+    // Atrás do proxy da plataforma (Railway/Render/Fly) o IP real vem no
+    // X-Forwarded-For; sem isso o rate limit veria só o IP do proxy.
+    confiarNoProxy: env.CONFIAR_NO_PROXY === 'true',
+    nivelLog: opcional(env, 'NIVEL_LOG') ?? 'info',
+    // Limite por IP nas rotas públicas (webhooks), por minuto.
+    limiteWebhooksPorMinuto: inteiro(env, 'LIMITE_WEBHOOKS_POR_MINUTO', 120),
+    // Segredo do provider fake (HMAC dos webhooks). O fake e o PIX simulado só
+    // existem fora de produção: lá eles seriam uma porta para forjar pagamentos.
+    fakeWebhookSecret: producao ? undefined : obrigatoria(env, 'FAKE_WEBHOOK_SECRET'),
+    // Stripe é opcional: sem as chaves, o adaptador fica desligado.
+    stripeSecretKey: opcional(env, 'STRIPE_SECRET_KEY'),
+    stripeWebhookSecret: opcional(env, 'STRIPE_WEBHOOK_SECRET'),
+  } as const;
+}
+
+export type Config = ReturnType<typeof carregarConfig>;
+
+export const config: Config = carregarConfig();

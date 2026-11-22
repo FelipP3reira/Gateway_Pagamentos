@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { ErroDeAplicacao } from '../erros.ts';
 import type { ServicoPix } from '../pix/servico-pix.ts';
+import type { LimiteDeTaxa } from './webhooks.ts';
 
 interface CorpoChave {
   tipo: 'aleatoria' | 'cpf' | 'email' | 'telefone';
@@ -43,7 +44,10 @@ function cabecalho(valor: string | string[] | undefined): string | undefined {
   return Array.isArray(valor) ? valor[0] : valor;
 }
 
-export function registrarRotasPix(app: FastifyInstance, deps: { pix: ServicoPix }): void {
+export function registrarRotasPix(
+  app: FastifyInstance,
+  deps: { pix: ServicoPix; limite: LimiteDeTaxa },
+): void {
   const { pix } = deps;
 
   app.post<{ Body: CorpoChave }>(
@@ -92,13 +96,17 @@ export function registrarRotasPix(app: FastifyInstance, deps: { pix: ServicoPix 
 
   // Webhook de confirmação do PSP (sandbox). Rota estática, tem prioridade sobre
   // /webhooks/:provedor.
-  app.post('/webhooks/pix', async (requisicao, resposta) => {
-    const corpoCru = requisicao.corpoCru;
-    if (!corpoCru || corpoCru.length === 0) {
-      throw new ErroDeAplicacao(400, 'corpo_vazio', 'Webhook sem corpo.');
-    }
-    const assinatura = cabecalho(requisicao.headers['x-assinatura']);
-    const resultado = await pix.confirmar(corpoCru, assinatura);
-    return resposta.status(200).send({ recebido: true, processado: resultado.processado });
-  });
+  app.post(
+    '/webhooks/pix',
+    { config: { rateLimit: deps.limite } },
+    async (requisicao, resposta) => {
+      const corpoCru = requisicao.corpoCru;
+      if (!corpoCru || corpoCru.length === 0) {
+        throw new ErroDeAplicacao(400, 'corpo_vazio', 'Webhook sem corpo.');
+      }
+      const assinatura = cabecalho(requisicao.headers['x-assinatura']);
+      const resultado = await pix.confirmar(corpoCru, assinatura);
+      return resposta.status(200).send({ recebido: true, processado: resultado.processado });
+    },
+  );
 }

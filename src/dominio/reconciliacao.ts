@@ -16,10 +16,13 @@ export interface ResultadoReconciliacao {
  * — sempre por uma transição válida, nunca forçando um salto proibido.
  */
 export class ServicoDeReconciliacao {
-  constructor(
-    private readonly repo: RepositorioDePagamentos,
-    private readonly registro: RegistroDeProvedores,
-  ) {}
+  private readonly repo: RepositorioDePagamentos;
+  private readonly registro: RegistroDeProvedores;
+
+  constructor(repo: RepositorioDePagamentos, registro: RegistroDeProvedores) {
+    this.repo = repo;
+    this.registro = registro;
+  }
 
   async reconciliar(id: number): Promise<ResultadoReconciliacao> {
     const pagamento = await this.repo.buscar(id);

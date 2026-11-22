@@ -37,7 +37,7 @@ function webhookCaptura(referencia: string, eventoId: string) {
   });
   return {
     payload: corpo,
-    assinatura: assinarHmac(Buffer.from(corpo, 'utf8'), config.fakeWebhookSecret),
+    assinatura: assinarHmac(Buffer.from(corpo, 'utf8'), config.fakeWebhookSecret!),
   };
 }
 
