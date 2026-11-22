@@ -22,6 +22,12 @@ export interface TabelaPagamentos {
   // A mesma chave nunca cria dois pagamentos (idempotência da criação).
   chave_idempotencia: string;
   descricao: ColumnType<string | null, string | null | undefined, string | null>;
+  // Número de parcelas do cartão (1 = à vista). Pix e débito são sempre 1.
+  parcelas: ColumnType<number, number | undefined, number>;
+  // Método no provedor (ex.: "visa", "master", "pix" no Mercado Pago).
+  metodo_pagamento_id: ColumnType<string | null, string | null | undefined, string | null>;
+  // Banco emissor do cartão, quando o provedor exige (issuer_id do Mercado Pago).
+  emissor_id: ColumnType<string | null, string | null | undefined, string | null>;
   criado_em: CriadaEm;
   atualizado_em: ColumnType<Date, Date | string | undefined, Date | string>;
 }

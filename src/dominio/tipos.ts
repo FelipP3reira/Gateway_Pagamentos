@@ -1,6 +1,7 @@
 import type { Estado, Provedor } from '../db/esquema.ts';
+import type { Pagador } from '../provedores/provedor.ts';
 
-export type { Estado, Provedor };
+export type { Estado, Pagador, Provedor };
 
 // Dados para criar uma cobrança, no nível do domínio — sem detalhe de provedor.
 export interface NovaCobranca {
@@ -15,6 +16,13 @@ export interface NovaCobranca {
   capturaAutomatica: boolean;
   // A mesma chave nunca cria dois pagamentos.
   chaveIdempotencia: string;
+  // Parcelas do cartão; ausente = 1 (à vista).
+  parcelas?: number;
+  metodoPagamentoId?: string;
+  emissorId?: string;
+  // Repassado ao provedor e NÃO persistido aqui (o gateway não guarda dado
+  // pessoal que não precisa — LGPD). A loja é a dona do cadastro.
+  pagador?: Pagador;
 }
 
 export interface Pagamento {
@@ -25,6 +33,9 @@ export interface Pagamento {
   valorCentavos: number;
   moeda: string;
   descricao: string | null;
+  parcelas: number;
+  metodoPagamentoId: string | null;
+  emissorId: string | null;
   criadoEm: Date;
   atualizadoEm: Date;
 }

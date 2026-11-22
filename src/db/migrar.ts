@@ -23,6 +23,16 @@ export async function migrar(url?: string): Promise<void> {
       )
     `.execute(db);
 
+    // G3 — parcelas e método no provedor. ADD COLUMN IF NOT EXISTS mantém a
+    // migração reexecutável; pagamentos antigos ficam com 1 parcela.
+    await sql`
+      ALTER TABLE pagamentos
+        ADD COLUMN IF NOT EXISTS parcelas INTEGER NOT NULL DEFAULT 1
+          CONSTRAINT ck_pagamentos_parcelas CHECK (parcelas >= 1),
+        ADD COLUMN IF NOT EXISTS metodo_pagamento_id TEXT,
+        ADD COLUMN IF NOT EXISTS emissor_id TEXT
+    `.execute(db);
+
     // Idempotência da criação: a mesma chave nunca gera dois pagamentos.
     await sql`
       CREATE UNIQUE INDEX IF NOT EXISTS ix_pagamentos_idempotencia

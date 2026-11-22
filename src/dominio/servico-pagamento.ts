@@ -32,6 +32,14 @@ export class ServicoDePagamento {
     // Provedor indisponível é barrado antes de gravar: senão sobraria um
     // pagamento `pendente` órfão que nunca falou com provedor nenhum.
     const provedor = this.registro.obter(nova.provedor);
+    const parcelas = nova.parcelas ?? 1;
+    if (parcelas > provedor.parcelasMaximas) {
+      throw new ErroDeAplicacao(
+        400,
+        'parcelas_invalidas',
+        `O provedor "${provedor.nome}" aceita no máximo ${provedor.parcelasMaximas} parcela(s).`,
+      );
+    }
 
     const { pagamento, nova: primeira } = await this.repo.criarIdempotente(nova);
     if (!primeira) {
@@ -47,6 +55,10 @@ export class ServicoDePagamento {
         descricao: nova.descricao,
         capturaAutomatica: nova.capturaAutomatica,
         chaveIdempotencia: nova.chaveIdempotencia,
+        parcelas,
+        metodoPagamentoId: nova.metodoPagamentoId,
+        emissorId: nova.emissorId,
+        pagador: nova.pagador,
       });
     } catch {
       // O provedor falhou de forma inesperada (rede, etc.). Deixa o pagamento em
