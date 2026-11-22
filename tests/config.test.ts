@@ -109,4 +109,12 @@ describe('config', () => {
     });
     expect(config.lojaUrl).toBe('http://localhost:3000');
   });
+
+  it('usa a PORT da plataforma quando não há PORTA; PORTA explícita vence', () => {
+    const base = { ...BASE, FAKE_WEBHOOK_SECRET: 's' };
+    expect(carregarConfig(base).porta).toBe(3011);
+    expect(carregarConfig({ ...base, PORT: '8080' }).porta).toBe(8080);
+    expect(carregarConfig({ ...base, PORT: '8080', PORTA: '3011' }).porta).toBe(3011);
+    expect(() => carregarConfig({ ...base, PORT: 'x' })).toThrow(/PORT/);
+  });
 });

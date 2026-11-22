@@ -94,7 +94,8 @@ export function carregarConfig(env: Env = process.env) {
   return {
     ambiente,
     producao,
-    porta: inteiro(env, 'PORTA', 3011),
+    // PORTA explícita vence; senão a PORT que Railway/Render/Fly injetam.
+    porta: opcional(env, 'PORTA') ? inteiro(env, 'PORTA', 3011) : inteiro(env, 'PORT', 3011),
     databaseUrl: obrigatoria(env, 'DATABASE_URL'),
     chavesApi,
     // Atrás do proxy da plataforma (Railway/Render/Fly) o IP real vem no

@@ -51,6 +51,9 @@ A imagem sobe com `AMBIENTE=producao`: roda a migração (idempotente) e depois 
 servidor. Em produção, `GATEWAY_API_KEY` é obrigatória e o provider fake e o PIX
 simulado ficam desligados. Todas as variáveis estão em `.env.example`.
 
+Deploy em produção (Railway, com Render como alternativa), Mercado Pago e o
+teste de ponta a ponta em sandbox: [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## API
 
 Todas as rotas exigem `Authorization: Bearer <GATEWAY_API_KEY>`, exceto
@@ -247,3 +250,5 @@ verdade exigiria, além do que está aqui:
 - [x] Parcelas, método e emissor no pagamento; pagador repassado ao provedor
 - [x] Adaptador Mercado Pago: cartão parcelado, Pix real, webhook com assinatura oficial
 - [x] Referência do pedido, consulta por pedido e notificação assinada para a loja (outbox)
+- [x] Deploy como código (Railway/Render), CI e teste de ponta a ponta em sandbox (`npm run teste:sandbox`)
+- [ ] Publicar na Railway e rodar o teste de sandbox com as credenciais de teste do Mercado Pago

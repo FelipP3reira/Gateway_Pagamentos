@@ -7,3 +7,7 @@ coverage
 
 # Demo local (não versionado)
 demo.ts
+
+# Credenciais locais (sandbox etc.)
+.env.*
+!.env.example

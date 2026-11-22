@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "formatar": "prettier --write .",
     "formato": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "teste:sandbox": "node --experimental-strip-types --disable-warning=ExperimentalWarning --env-file-if-exists=.env.sandbox scripts/teste-sandbox.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",

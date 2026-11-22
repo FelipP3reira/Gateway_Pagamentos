@@ -174,3 +174,28 @@ obrigatórias (HTTPS, segredo de 32+).
 
 **O QR do Pix fica fora da notificação.** São alguns KB que a loja já recebeu na
 criação; se precisar, relê em `GET /pagamentos/:id`.
+
+## G6 — Deploy
+
+**Railway como padrão, Render como alternativa.** Os dois rodam a mesma imagem
+Docker com Postgres gerenciado. O `railway.json` (build pelo Dockerfile, health
+check em `/saude`, reinício em falha) e o `render.yaml` deixam a configuração no
+repositório. Segredos ficam só no painel da plataforma.
+
+**Porta**: `PORTA` explícita vence; senão a `PORT` que a plataforma injeta;
+senão 3011. A imagem não fixa mais `PORTA`, que mascarava a `PORT` da Railway.
+
+**Banco pela rede privada.** Na Railway o gateway usa a URL interna do
+Postgres (sem SSL e sem tráfego público). A URL pública fica só para
+administração.
+
+**Teste de ponta a ponta em sandbox como script, não como teste do CI.** Ele
+depende de credenciais de teste do Mercado Pago e de um gateway publicado, que
+não existem no CI. O `scripts/teste-sandbox.ts` fala só HTTP (como a loja) e se
+recusa a rodar com chave pública que não seja `TEST-`.
+
+**CI**: formato, lint, tipos, testes contra Postgres 16 e build da imagem
+Docker a cada PR.
+
+**Pendente (depende de conta e credenciais):** criar o projeto na Railway,
+configurar o webhook no painel do Mercado Pago e rodar `npm run teste:sandbox`.
