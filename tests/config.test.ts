@@ -4,6 +4,8 @@ import { carregarConfig } from '../src/config.ts';
 
 const CHAVE_FORTE = 'k'.repeat(40);
 const BASE = { DATABASE_URL: 'postgres://x/y' };
+// O mínimo que produção exige além da chave da API.
+const LOJA = { LOJA_URL: 'https://loja.exemplo.com', LOJA_WEBHOOK_SECRET: 's'.repeat(40) };
 
 describe('config', () => {
   it('em produção, falha no boot sem GATEWAY_API_KEY', () => {
@@ -27,6 +29,7 @@ describe('config', () => {
   it('em produção, não exige nem carrega o segredo do fake', () => {
     const config = carregarConfig({
       ...BASE,
+      ...LOJA,
       AMBIENTE: 'producao',
       GATEWAY_API_KEY: CHAVE_FORTE,
       FAKE_WEBHOOK_SECRET: 'nao-deveria-entrar',
@@ -39,6 +42,7 @@ describe('config', () => {
   it('a chave anterior entra na lista para a rotação', () => {
     const config = carregarConfig({
       ...BASE,
+      ...LOJA,
       AMBIENTE: 'producao',
       GATEWAY_API_KEY: CHAVE_FORTE,
       GATEWAY_API_KEY_ANTERIOR: 'a'.repeat(40),
@@ -76,5 +80,33 @@ describe('config', () => {
         MERCADOPAGO_URL_NOTIFICACAO: 'http://gateway.exemplo.com/webhooks/mercadopago',
       }),
     ).toThrow(/https/);
+  });
+
+  it('loja: URL e segredo andam juntos', () => {
+    expect(() =>
+      carregarConfig({ ...BASE, FAKE_WEBHOOK_SECRET: 's', LOJA_URL: 'http://localhost:3000' }),
+    ).toThrow(/andam juntas/);
+  });
+
+  it('loja: obrigatória em produção, com HTTPS e segredo forte', () => {
+    const producao = { ...BASE, AMBIENTE: 'producao', GATEWAY_API_KEY: CHAVE_FORTE };
+    expect(() => carregarConfig(producao)).toThrow(/obrigatórias em produção/);
+    expect(() =>
+      carregarConfig({ ...producao, ...LOJA, LOJA_URL: 'http://loja.exemplo.com' }),
+    ).toThrow(/https/);
+    expect(() => carregarConfig({ ...producao, ...LOJA, LOJA_WEBHOOK_SECRET: 'curto' })).toThrow(
+      /fraco/,
+    );
+    expect(carregarConfig({ ...producao, ...LOJA }).lojaUrl).toBe('https://loja.exemplo.com');
+  });
+
+  it('loja: opcional fora de produção (aceita http local)', () => {
+    const config = carregarConfig({
+      ...BASE,
+      FAKE_WEBHOOK_SECRET: 's',
+      LOJA_URL: 'http://localhost:3000',
+      LOJA_WEBHOOK_SECRET: 'dev',
+    });
+    expect(config.lojaUrl).toBe('http://localhost:3000');
   });
 });

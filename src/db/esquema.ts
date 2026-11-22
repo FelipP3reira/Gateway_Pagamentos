@@ -37,6 +37,8 @@ export interface TabelaPagamentos {
   pix_qr_code_base64: ColumnType<string | null, string | null | undefined, string | null>;
   pix_url_ticket: ColumnType<string | null, string | null | undefined, string | null>;
   pix_expira_em: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+  // Id do pedido na loja. Não é único: um pedido pode ter várias tentativas.
+  referencia_pedido: ColumnType<string | null, string | null | undefined, string | null>;
   criado_em: CriadaEm;
   atualizado_em: ColumnType<Date, Date | string | undefined, Date | string>;
 }
@@ -90,6 +92,39 @@ export interface TabelaCobrancasPix {
   criada_em: CriadaEm;
 }
 
+export type StatusNotificacao = 'pendente' | 'entregue' | 'falhou';
+
+// Outbox de notificações para a loja: gravada na MESMA transação da mudança de
+// estado, então nenhuma mudança fica sem aviso. O entregador lê daqui.
+export interface TabelaNotificacoesLoja {
+  id: Generated<number>;
+  pagamento_id: number;
+  // Id do evento para a loja deduplicar (UUID).
+  evento_id: string;
+  // Id da última transição: ordem monotônica por pagamento, para a loja
+  // ignorar um evento mais antigo que chegue atrasado.
+  sequencia: number;
+  estado: Estado;
+  payload: ColumnType<unknown, string, string>;
+  status: ColumnType<StatusNotificacao, StatusNotificacao | undefined, StatusNotificacao>;
+  tentativas: ColumnType<number, number | undefined, number>;
+  proxima_tentativa_em: ColumnType<Date, Date | string | undefined, Date | string>;
+  ultimo_erro: ColumnType<string | null, string | null | undefined, string | null>;
+  criada_em: CriadaEm;
+  entregue_em: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+}
+
+// Registro de cada tentativa de entrega (sucesso ou falha). Nunca se apaga.
+export interface TabelaTentativasNotificacao {
+  id: Generated<number>;
+  notificacao_id: number;
+  numero: number;
+  status_http: ColumnType<number | null, number | null | undefined, never>;
+  erro: ColumnType<string | null, string | null | undefined, never>;
+  duracao_ms: number;
+  criada_em: CriadaEm;
+}
+
 export interface BancoDeDados {
   pagamentos: TabelaPagamentos;
   transicoes: TabelaTransicoes;
@@ -97,4 +132,6 @@ export interface BancoDeDados {
   estornos: TabelaEstornos;
   chaves_pix: TabelaChavesPix;
   cobrancas_pix: TabelaCobrancasPix;
+  notificacoes_loja: TabelaNotificacoesLoja;
+  tentativas_notificacao: TabelaTentativasNotificacao;
 }

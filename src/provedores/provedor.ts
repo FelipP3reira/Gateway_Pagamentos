@@ -53,6 +53,8 @@ export interface DadosCobranca {
   pagador?: Pagador;
   // Validade da cobrança Pix, em minutos a partir de agora.
   pixExpiraEmMinutos?: number;
+  // Id do pedido na loja, para aparecer no painel do provedor.
+  referenciaPedido?: string;
 }
 
 export interface ResultadoProvedor {

@@ -3,7 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { ErroDeAplicacao } from '../erros.ts';
 import type { ServicoDeReconciliacao } from '../dominio/reconciliacao.ts';
 import type { ServicoDePagamento } from '../dominio/servico-pagamento.ts';
-import type { Metodo, Pagador, Pagamento } from '../dominio/tipos.ts';
+import { apresentar } from '../dominio/apresentacao.ts';
+import type { Metodo, Pagador } from '../dominio/tipos.ts';
 
 // Teto absoluto de parcelas aceito na API. Cada provedor ainda impõe o seu
 // (`parcelasMaximas`), e a regra comercial (juros, parcela mínima) é da loja.
@@ -27,7 +28,17 @@ interface CorpoCriar {
   emissorId?: string;
   pagador?: Pagador;
   pixExpiraEmMinutos?: number;
+  referenciaPedido?: string;
 }
+
+// Id do pedido na loja: curto e sem caracteres que atrapalhem query string ou o
+// painel do provedor.
+const schemaReferenciaPedido = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 64,
+  pattern: '^[A-Za-z0-9._:-]+$',
+} as const;
 
 const schemaCriar = {
   type: 'object',
@@ -37,6 +48,7 @@ const schemaCriar = {
   properties: {
     provedor: { type: 'string', enum: ['stripe', 'fake', 'mercadopago'] },
     metodo: { type: 'string', enum: ['cartao', 'pix'] },
+    referenciaPedido: schemaReferenciaPedido,
     pixExpiraEmMinutos: { type: 'integer', minimum: PIX_MINUTOS_MIN, maximum: PIX_MINUTOS_MAX },
     valorCentavos: { type: 'integer', minimum: 1 },
     moeda: { type: 'string', minLength: 3, maxLength: 3 },
@@ -59,28 +71,6 @@ const schemaCriar = {
     },
   },
 };
-
-// Resposta pública do pagamento. Não há dado sensível para omitir — o token do
-// método nunca é guardado —, mas a saída é explícita de propósito.
-function apresentar(p: Pagamento) {
-  return {
-    id: p.id,
-    provedor: p.provedor,
-    estado: p.estado,
-    valorCentavos: p.valorCentavos,
-    moeda: p.moeda,
-    referenciaExterna: p.referenciaExterna,
-    descricao: p.descricao,
-    parcelas: p.parcelas,
-    metodoPagamentoId: p.metodoPagamentoId,
-    emissorId: p.emissorId,
-    metodo: p.metodo,
-    // Copia e cola, QR (PNG base64) e validade da cobrança Pix do provedor.
-    pix: p.pix,
-    criadoEm: p.criadoEm,
-    atualizadoEm: p.atualizadoEm,
-  };
-}
 
 export function registrarRotasPagamentos(
   app: FastifyInstance,
@@ -125,6 +115,7 @@ export function registrarRotasPagamentos(
         metodoPagamentoId: corpo.metodoPagamentoId,
         emissorId: corpo.emissorId,
         pagador: corpo.pagador,
+        referenciaPedido: corpo.referenciaPedido,
         pixExpiraEmMinutos:
           metodo === 'pix' ? (corpo.pixExpiraEmMinutos ?? PIX_MINUTOS_PADRAO) : undefined,
       });
@@ -145,6 +136,25 @@ export function registrarRotasPagamentos(
       return apresentar(await executar(id));
     });
   }
+
+  // Tentativas de pagamento de um pedido da loja. O filtro é obrigatório: não há
+  // listagem geral.
+  app.get<{ Querystring: { referenciaPedido: string } }>(
+    '/pagamentos',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['referenciaPedido'],
+          properties: { referenciaPedido: schemaReferenciaPedido },
+        },
+      },
+    },
+    async (requisicao) => {
+      const pagamentos = await servico.listarPorPedido(requisicao.query.referenciaPedido);
+      return { pagamentos: pagamentos.map(apresentar) };
+    },
+  );
 
   app.get<{ Params: { id: string } }>('/pagamentos/:id', async (requisicao) => {
     const id = Number(requisicao.params.id);

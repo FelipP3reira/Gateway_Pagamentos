@@ -66,6 +66,7 @@ export class ServicoDePagamento {
       emissorId: nova.emissorId,
       pagador: nova.pagador,
       pixExpiraEmMinutos: nova.pixExpiraEmMinutos,
+      referenciaPedido: nova.referenciaPedido,
     };
     // Regras do próprio provedor, também antes de gravar.
     provedor.validarCobranca?.(dados);
@@ -148,6 +149,10 @@ export class ServicoDePagamento {
     garantirTransicao(pagamento.estado, 'cancelado');
     await this.registro.obter(pagamento.provedor).cancelar(this.exigirReferencia(pagamento));
     return this.repo.transicionar(id, 'cancelado', 'cancelamento solicitado');
+  }
+
+  async listarPorPedido(referenciaPedido: string): Promise<Pagamento[]> {
+    return this.repo.listarPorReferenciaPedido(referenciaPedido);
   }
 
   async buscar(id: number): Promise<Pagamento> {

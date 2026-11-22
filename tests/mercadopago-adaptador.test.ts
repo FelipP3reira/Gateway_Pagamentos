@@ -201,6 +201,11 @@ describe('cobrança no cartão', () => {
     expect(resultado).toEqual({ referenciaExterna: '1000000', estado: 'capturado' });
   });
 
+  it('envia a referência do pedido como external_reference', async () => {
+    await adaptador.autorizar(cartao({ referenciaPedido: 'PED-42' }));
+    expect(mp.chamadas[0]!.corpo!.external_reference).toBe('PED-42');
+  });
+
   it('captura manual devolve autorizado', async () => {
     const resultado = await adaptador.autorizar(cartao({ capturaAutomatica: false }));
     expect(resultado.estado).toBe('autorizado');
