@@ -33,6 +33,21 @@ export async function migrar(url?: string): Promise<void> {
         ADD COLUMN IF NOT EXISTS emissor_id TEXT
     `.execute(db);
 
+    // G4 — método e a cobrança Pix devolvida pelo provedor.
+    await sql`
+      ALTER TABLE pagamentos
+        ADD COLUMN IF NOT EXISTS metodo TEXT NOT NULL DEFAULT 'cartao',
+        ADD COLUMN IF NOT EXISTS pix_copia_e_cola TEXT,
+        ADD COLUMN IF NOT EXISTS pix_qr_code_base64 TEXT,
+        ADD COLUMN IF NOT EXISTS pix_url_ticket TEXT,
+        ADD COLUMN IF NOT EXISTS pix_expira_em TIMESTAMPTZ
+    `.execute(db);
+
+    // Pagamentos do Pix simulado anteriores à coluna nasceram como 'cartao'.
+    await sql`
+      UPDATE pagamentos SET metodo = 'pix' WHERE provedor = 'pix' AND metodo <> 'pix'
+    `.execute(db);
+
     // Idempotência da criação: a mesma chave nunca gera dois pagamentos.
     await sql`
       CREATE UNIQUE INDEX IF NOT EXISTS ix_pagamentos_idempotencia

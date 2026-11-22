@@ -28,3 +28,16 @@ export class AssinaturaInvalida extends ErroDeAplicacao {
     this.name = 'AssinaturaInvalida';
   }
 }
+
+// O provedor recusou a requisição de forma definitiva (4xx de validação: token
+// inválido, dados recusados). Diferente de falha de rede: aqui sabemos que a
+// cobrança não foi criada lá, então o pagamento pode ir para `falhou`.
+export class RecusaDoProvedor extends Error {
+  readonly codigo: string;
+
+  constructor(codigo: string, mensagem: string) {
+    super(mensagem);
+    this.codigo = codigo;
+    this.name = 'RecusaDoProvedor';
+  }
+}

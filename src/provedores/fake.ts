@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { config } from '../config.ts';
 import { AssinaturaInvalida, ErroDeAplicacao } from '../erros.ts';
+import { gerarBrCode } from '../pix/brcode.ts';
+import { gerarQr } from '../pix/qr.ts';
 import { verificarHmac } from '../seguranca/hmac.ts';
 import type {
   DadosCobranca,
@@ -29,6 +31,8 @@ export class ProvedorFake implements ProvedorDePagamento {
   readonly nome = 'fake' as const;
   // Igual ao teto usual do cartão no Brasil, para os testes exercitarem parcelas.
   readonly parcelasMaximas = 12;
+  // Pix também, para a loja testar o fluxo inteiro (QR + webhook) sem provedor.
+  readonly metodos = ['cartao', 'pix'] as const;
   private readonly cobrancas = new Map<string, CobrancaFake>();
 
   private readonly segredo: string;
@@ -41,7 +45,10 @@ export class ProvedorFake implements ProvedorDePagamento {
     this.segredo = segredo;
   }
 
-  autorizar(dados: DadosCobranca): Promise<ResultadoProvedor> {
+  async autorizar(dados: DadosCobranca): Promise<ResultadoProvedor> {
+    if (dados.metodo === 'pix') {
+      return this.cobrarPix(dados);
+    }
     const referenciaExterna = `fake_pi_${randomUUID()}`;
     const estado: EstadoProvedor =
       dados.tokenMetodo === TOKEN_QUE_FALHA
@@ -50,7 +57,37 @@ export class ProvedorFake implements ProvedorDePagamento {
           ? 'capturado'
           : 'autorizado';
     this.cobrancas.set(referenciaExterna, { estado, valorCentavos: dados.valorCentavos });
-    return Promise.resolve({ referenciaExterna, estado });
+    return { referenciaExterna, estado };
+  }
+
+  // Pix fake: nasce pendente, com BR Code e QR válidos de uma chave de teste.
+  // Fica pago quando chega um webhook assinado com estado `capturado`.
+  private async cobrarPix(dados: DadosCobranca): Promise<ResultadoProvedor> {
+    const txid = randomUUID().replace(/-/g, '').slice(0, 25);
+    const referenciaExterna = `fake_pix_${txid}`;
+    const copiaECola = gerarBrCode({
+      chave: 'pix-fake@pandim.test',
+      valorCentavos: dados.valorCentavos,
+      nomeRecebedor: 'Provedor Fake',
+      cidade: 'SAO PAULO',
+      txid,
+    });
+    const { pngDataUri } = await gerarQr(copiaECola);
+    const minutos = dados.pixExpiraEmMinutos ?? 30;
+    this.cobrancas.set(referenciaExterna, {
+      estado: 'pendente',
+      valorCentavos: dados.valorCentavos,
+    });
+    return {
+      referenciaExterna,
+      estado: 'pendente',
+      pix: {
+        copiaECola,
+        qrCodeBase64: pngDataUri.replace(/^data:image\/png;base64,/, ''),
+        urlTicket: null,
+        expiraEm: new Date(Date.now() + minutos * 60_000),
+      },
+    };
   }
 
   capturar(referenciaExterna: string): Promise<ResultadoProvedor> {

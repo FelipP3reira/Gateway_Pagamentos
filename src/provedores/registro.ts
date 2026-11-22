@@ -5,6 +5,7 @@ import type { Provedor } from '../db/esquema.ts';
 import { ErroDeAplicacao } from '../erros.ts';
 import { ProvedorFake } from './fake.ts';
 import type { ProvedorDePagamento } from './provedor.ts';
+import { AdaptadorMercadoPago } from './mercadopago.ts';
 import { AdaptadorStripe } from './stripe.ts';
 
 // Mapa nome→provedor. O serviço pede pelo nome e nunca conhece o adaptador.
@@ -50,6 +51,17 @@ export function montarRegistro(): RegistroDeProvedores {
   if (config.stripeSecretKey && config.stripeWebhookSecret) {
     const stripe = new Stripe(config.stripeSecretKey);
     registro.registrar(new AdaptadorStripe(stripe, config.stripeWebhookSecret));
+  }
+
+  if (config.mercadoPagoAccessToken && config.mercadoPagoWebhookSecret) {
+    registro.registrar(
+      new AdaptadorMercadoPago({
+        accessToken: config.mercadoPagoAccessToken,
+        segredoWebhook: config.mercadoPagoWebhookSecret,
+        urlNotificacao: config.mercadoPagoUrlNotificacao,
+        parcelasMaximas: config.mercadoPagoParcelasMaximas,
+      }),
+    );
   }
 
   return registro;

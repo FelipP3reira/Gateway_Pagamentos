@@ -62,6 +62,16 @@ export function carregarConfig(env: Env = process.env) {
     );
   }
 
+  const urlNotificacao = opcional(env, 'MERCADOPAGO_URL_NOTIFICACAO');
+  if (urlNotificacao && !urlNotificacao.startsWith('https://')) {
+    // A API do Mercado Pago recusa notification_url sem HTTPS.
+    throw new Error('MERCADOPAGO_URL_NOTIFICACAO deve começar com https://.');
+  }
+  if (opcional(env, 'MERCADOPAGO_ACCESS_TOKEN') && !opcional(env, 'MERCADOPAGO_WEBHOOK_SECRET')) {
+    // Token sem segredo deixaria o webhook sem verificação: falha cedo.
+    throw new Error('MERCADOPAGO_WEBHOOK_SECRET é obrigatório quando há MERCADOPAGO_ACCESS_TOKEN.');
+  }
+
   return {
     ambiente,
     producao,
@@ -77,6 +87,13 @@ export function carregarConfig(env: Env = process.env) {
     // Segredo do provider fake (HMAC dos webhooks). O fake e o PIX simulado só
     // existem fora de produção: lá eles seriam uma porta para forjar pagamentos.
     fakeWebhookSecret: producao ? undefined : obrigatoria(env, 'FAKE_WEBHOOK_SECRET'),
+    // Mercado Pago: liga quando token e segredo do webhook existem. Em Preview e
+    // desenvolvimento, use as credenciais de TESTE; em produção, as de produção.
+    mercadoPagoAccessToken: opcional(env, 'MERCADOPAGO_ACCESS_TOKEN'),
+    mercadoPagoWebhookSecret: opcional(env, 'MERCADOPAGO_WEBHOOK_SECRET'),
+    // URL pública (HTTPS) do nosso /webhooks/mercadopago, enviada em cada cobrança.
+    mercadoPagoUrlNotificacao: opcional(env, 'MERCADOPAGO_URL_NOTIFICACAO'),
+    mercadoPagoParcelasMaximas: inteiro(env, 'MERCADOPAGO_PARCELAS_MAXIMAS', 12),
     // Stripe é opcional: sem as chaves, o adaptador fica desligado.
     stripeSecretKey: opcional(env, 'STRIPE_SECRET_KEY'),
     stripeWebhookSecret: opcional(env, 'STRIPE_WEBHOOK_SECRET'),
