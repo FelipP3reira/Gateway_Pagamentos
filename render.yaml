@@ -1,0 +1,37 @@
+# Alternativa ao Railway (Render Blueprint). O padrão do projeto é Railway
+# (railway.json); veja docs/DEPLOY.md. Segredos (sync: false) são preenchidos
+# no painel do Render, nunca aqui.
+services:
+  - type: web
+    name: gateway-pagamentos
+    runtime: docker
+    plan: starter
+    region: virginia
+    healthCheckPath: /saude
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gateway-pagamentos-db
+          property: connectionString
+      - key: AMBIENTE
+        value: producao
+      - key: CONFIAR_NO_PROXY
+        value: 'true'
+      - key: GATEWAY_API_KEY
+        sync: false
+      - key: LOJA_URL
+        sync: false
+      - key: LOJA_WEBHOOK_SECRET
+        sync: false
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: MERCADOPAGO_WEBHOOK_SECRET
+        sync: false
+      - key: MERCADOPAGO_URL_NOTIFICACAO
+        sync: false
+
+databases:
+  - name: gateway-pagamentos-db
+    plan: basic-256mb
+    region: virginia
+    postgresMajorVersion: '16'

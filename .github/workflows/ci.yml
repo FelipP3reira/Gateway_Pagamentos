@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pagamentos
+          POSTGRES_PASSWORD: pagamentos
+          POSTGRES_DB: pagamentos_teste
+        ports: ['5440:5432']
+        options: >-
+          --health-cmd "pg_isready -U pagamentos"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run formato
+      - run: npm run lint
+      - run: npm run tipos
+      - run: npm test
+      # A imagem de produção precisa construir (o deploy usa este Dockerfile).
+      - run: docker build -t gateway-pagamentos:ci .
